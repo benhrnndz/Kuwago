@@ -14,16 +14,42 @@
  * IMPORTANT: Replace this with your deployed Apps Script web app URL.
  * The URL looks like: https://script.google.com/macros/s/DEPLOY_ID/exec
  */
-const API_BASE = 'https://script.google.com/macros/s/AKfycbwL9EYd_XOQSqELRbdupUcpZhCxhZ7dt9fASZKkKxYtdEtDkWmW3iIRiK3HNQL7WTBG5g/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbwFicAeiL0R-2Uke92ewDm-aduaoRpcFG8aO1Z7Ri7VVCAIWCT7tLMTzFIGSA9hvaTXww/exec';
 
 const PROMPT_POLL_INTERVAL = 7000;  /* Poll for active prompt every ~7 seconds */
 const FOCUS_DEBOUNCE_MS = 1500;     /* Ignore focus changes shorter than 1.5s */
-const REQUEST_TIMEOUT_MS = 8000;    /* API request timeout */
+const REQUEST_TIMEOUT_MS = 20000;   /* API request timeout (Apps Script can be slow on cold start) */
 
 /* ── State ─────────────────────────────────────────────── */
 let _activeMeetTabs = new Map();    /* tabId → { studentName, sessionId, url } */
 let _promptPollTimer = null;
+let _heartbeatInFlight = false;
+
+/**
+ * Report to the server that this extension is alive.
+ * Called on every content-script keepalive (~15s). The dashboard marks a
+ * joined student "disconnected" if no heartbeat arrives for ~60s.
+ * @param {string|null} studentName - Detected Meet display name
+ */
+async function sendServerHeartbeat(studentName) {
+  if (!studentName || _heartbeatInFlight) return;
+  _heartbeatInFlight = true;
+  try {
+    await apiPost('heartbeat', {
+      studentName,
+      version: chrome.runtime.getManifest().version
+    });
+  } catch (err) {
+    console.warn('[cam-bg] heartbeat failed:', err.message);
+  } finally {
+    _heartbeatInFlight = false;
+  }
+}
 let _currentPromptPhrase = null;
+let _currentPrompt = null;          /* { id, phrase, issuedAt, expiresAt } */
+let _promptAnswered = false;        /* Student's reply matched the current prompt */
+
+const PROMPT_NOTIFICATION_ID = 'kuwago-prompt';
 
 /* Focus debounce state per tab */
 let _focusDebounce = new Map();     /* tabId → { timer, pendingType } */
@@ -76,6 +102,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           handleNameDetected(tabId, message.studentName);
         }
       }
+      /* Tell the server this extension is alive (drives the
+         dashboard's "connected" / "extension detected" state) */
+      sendServerHeartbeat(message.studentName || _activeMeetTabs.get(tabId)?.studentName);
       sendResponse({ ok: true });
       break;
 
@@ -116,6 +145,11 @@ function handleMeetPageLoaded(tabId, url) {
 
   /* Start prompt polling if not already running */
   startPromptPolling();
+
+  /* A prompt may already be live when this tab opens/reloads */
+  if (_currentPrompt) {
+    sendPromptToTab(tabId);
+  }
 }
 
 /**
@@ -292,18 +326,29 @@ function startPromptPolling() {
       const result = await apiGet('currentPrompt');
       if (!result) return;
 
-      const phrase = result.activePrompt?.phrase || null;
+      const active = result.activePrompt || null;
+      const phrase = active?.phrase || null;
+      /* Same phrase can be re-issued, so identity includes the issue time */
+      const id = active ? `${active.issuedAt || ''}|${phrase}` : null;
 
-      if (phrase !== _currentPromptPhrase) {
+      if (id !== (_currentPrompt?.id || null)) {
         _currentPromptPhrase = phrase;
+        _promptAnswered = false;
+        _currentPrompt = active
+          ? { id, phrase, issuedAt: active.issuedAt || null, expiresAt: active.expiresAt || null }
+          : null;
         console.log('[cam-bg] Active prompt updated:', phrase || 'none');
 
         /* Notify all content scripts about the new prompt */
         for (const [tabId] of _activeMeetTabs) {
-          chrome.tabs.sendMessage(tabId, {
-            type: 'ACTIVE_PROMPT',
-            phrase: phrase
-          }).catch(() => { /* Tab might not be ready */ });
+          sendPromptToTab(tabId);
+        }
+
+        if (_currentPrompt) {
+          setPromptBadge(true);
+          notifyPromptIfAway();
+        } else {
+          clearPromptAlerts();
         }
       }
     } catch (err) {
@@ -324,7 +369,84 @@ function stopPromptPolling() {
     _promptPollTimer = null;
   }
   _currentPromptPhrase = null;
+  _currentPrompt = null;
+  _promptAnswered = false;
+  clearPromptAlerts();
 }
+
+/* ── Prompt delivery to the page ───────────────────────── */
+
+/**
+ * Send the current prompt (or its absence) to one Meet tab's overlay.
+ */
+function sendPromptToTab(tabId) {
+  chrome.tabs.sendMessage(tabId, {
+    type: 'ACTIVE_PROMPT',
+    phrase: _currentPrompt ? _currentPrompt.phrase : null,
+    issuedAt: _currentPrompt ? _currentPrompt.issuedAt : null,
+    expiresAt: _currentPrompt ? _currentPrompt.expiresAt : null,
+    answered: _promptAnswered
+  }).catch(() => { /* Tab might not be ready */ });
+}
+
+/* ── Toolbar badge ─────────────────────────────────────── */
+
+function setPromptBadge(on) {
+  try {
+    chrome.action.setBadgeText({ text: on ? '!' : '' });
+    if (on) chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
+  } catch (e) { /* action API unavailable */ }
+}
+
+/* ── System notification (when Meet isn't in front) ────── */
+
+/**
+ * True if any tracked Meet tab is the active tab of the focused window.
+ */
+async function isMeetInFront() {
+  for (const [tabId] of _activeMeetTabs) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab.active) continue;
+      const win = await chrome.windows.get(tab.windowId);
+      if (win.focused) return true;
+    } catch (e) { /* tab closed */ }
+  }
+  return false;
+}
+
+async function notifyPromptIfAway() {
+  if (!_currentPrompt || _promptAnswered) return;
+  if (await isMeetInFront()) return;
+
+  chrome.notifications.create(PROMPT_NOTIFICATION_ID, {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: 'Prompt from your professor',
+    message: `Type "${_currentPrompt.phrase}" in the Meet chat`,
+    priority: 2,
+    requireInteraction: true
+  });
+}
+
+function clearPromptAlerts() {
+  setPromptBadge(false);
+  try { chrome.notifications.clear(PROMPT_NOTIFICATION_ID); } catch (e) { /* ignore */ }
+}
+
+/* Clicking the toast brings the student back to Meet */
+chrome.notifications.onClicked.addListener(async (notificationId) => {
+  if (notificationId !== PROMPT_NOTIFICATION_ID) return;
+
+  const tabId = _activeMeetTabs.keys().next().value;
+  if (tabId !== undefined) {
+    try {
+      const tab = await chrome.tabs.update(tabId, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+    } catch (e) { /* tab closed */ }
+  }
+  chrome.notifications.clear(notificationId);
+});
 
 /* ═══════════════════════════════════════════════════════════
    4. CHAT MESSAGE HANDLING
@@ -335,10 +457,20 @@ async function handleChatMessage(studentName, text) {
 
   console.log('[cam-bg] Submitting chat:', text.substring(0, 30));
 
-  await apiPost('submitChat', {
+  const result = await apiPost('submitChat', {
     studentName: studentName,
     text: text
   });
+
+  /* Reply matched the live prompt — confirm on the page and quiet the alerts */
+  if (result && result.matched && _currentPrompt && !_promptAnswered) {
+    _promptAnswered = true;
+    clearPromptAlerts();
+    for (const [tabId] of _activeMeetTabs) {
+      chrome.tabs.sendMessage(tabId, { type: 'PROMPT_ANSWERED' })
+        .catch(() => { /* Tab might not be ready */ });
+    }
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════

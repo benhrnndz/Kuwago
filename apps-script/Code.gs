@@ -139,6 +139,9 @@ function doPost(e) {
       case 'setPrompt':
         return jsonResponse(handleSetPrompt(body));
 
+      case 'heartbeat':
+        return jsonResponse(handleHeartbeat(body));
+
       default:
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
@@ -219,7 +222,11 @@ function handleDashboardData() {
   const rosterNames = sessionState.active && sessionState.sectionId
     ? getRosterForSection(sessionState.sectionId)
     : getRosterNames();
-  const sessions     = getAllRows('Sessions');
+  /* Only this class's joins count — stale rows from earlier classes are ignored */
+  const sessions     = sessionsInClassWindow(
+    getAllRows('Sessions'),
+    sessionState.active ? sessionState.startedAt : null
+  );
   const focusEvents  = getAllRows('FocusEvents');
   const prompts      = getAllRows('ChatPrompts');
   const responses    = getAllRows('ChatResponses');
@@ -351,8 +358,8 @@ function buildStudentList(rosterNames, sessions, focusEvents, prompts, responses
     const liveStatus = determineStatus(latestSession, sessionFocusEvents);
 
     /* Attendance */
-    let attendanceStatus = 'Absent';
-    if (latestSession) {
+    let attendanceStatus = sessionStartedAt ? 'Absent' : null; /* null = no class running, no verdict */
+    if (sessionStartedAt && latestSession) {
       const override = latestSession.OverrideStatus;
       if (override) {
         attendanceStatus = String(override);
@@ -946,7 +953,7 @@ function handleHeartbeat(body) {
   }
 
   /* Match against roster */
-  const canonical = matchToRoster(studentName);
+  const canonical = matchToRosterWithAlias(studentName);
   const resolvedName = canonical || studentName;
 
   upsertHeartbeat(resolvedName, version || 'unknown');
@@ -961,7 +968,7 @@ function handleHeartbeat(body) {
 function buildExtensionHealth(rosterNames, sessions) {
   const heartbeats = getAllRows('Heartbeats');
   const now = Date.now();
-  const DISCONNECT_THRESHOLD_MS = 45 * 1000; /* 45 seconds */
+  const DISCONNECT_THRESHOLD_MS = HEARTBEAT_DISCONNECT_MS;
 
   const health = [];
 
@@ -1169,7 +1176,11 @@ function handleStudentDetail(body) {
   const { sessionId, studentName } = body;
   if (!studentName) return { error: 'Missing studentName' };
 
-  const sessions   = getAllRows('Sessions');
+  const classState = handleGetSessionState();
+  const sessions   = sessionsInClassWindow(
+    getAllRows('Sessions'),
+    classState.active ? classState.startedAt : null
+  );
   const focusEvts  = getAllRows('FocusEvents');
   const prompts    = getAllRows('ChatPrompts');
   const responses  = getAllRows('ChatResponses');

@@ -16,7 +16,7 @@ import {
 } from './mock.js';
 
 /* ── Configuration ─────────────────────────────────────── */
-const API_BASE = 'https://script.google.com/macros/s/AKfycbwL9EYd_XOQSqELRbdupUcpZhCxhZ7dt9fASZKkKxYtdEtDkWmW3iIRiK3HNQL7WTBG5g/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbxxr5ZJdb0rvdH7Z3GEWX_4agoJvYCOOh9nYSbP8rdiVV6LZmxJ3U77f_qlYejRN4QyIA/exec';
 const REQUEST_TIMEOUT_MS = 30000;
 
 /* ── State ─────────────────────────────────────────────── */

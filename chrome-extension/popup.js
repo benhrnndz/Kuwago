@@ -10,6 +10,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const meetEl     = document.getElementById('status-meet');
   const nameEl     = document.getElementById('status-name');
   const promptCard = document.getElementById('card-prompt');
+  const soundToggle = document.getElementById('toggle-sound');
+
+  /* Prompt sounds on/off (read live by the Meet overlay) */
+  try {
+    const { kuwagoMuted } = await chrome.storage.local.get('kuwagoMuted');
+    soundToggle.checked = !kuwagoMuted;
+    soundToggle.addEventListener('change', () => {
+      chrome.storage.local.set({ kuwagoMuted: !soundToggle.checked });
+    });
+  } catch (e) {
+    soundToggle.disabled = true;
+  }
+
 
   try {
     /* Query background worker for extension status */

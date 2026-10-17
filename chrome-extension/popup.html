@@ -281,6 +281,30 @@
       font-weight: 500;
     }
 
+    /* ── Sound toggle ────────────────────────────────── */
+    .sound-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--ice-200);
+      background: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--zinc-900);
+    }
+
+    .sound-row input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent-600);
+      cursor: pointer;
+    }
+
     /* ── Footer ──────────────────────────────────────── */
     .footer {
       padding: 10px 18px 14px;
@@ -357,6 +381,11 @@
           <!-- Filled dynamically -->
         </div>
       </div>
+
+      <label class="sound-row" for="toggle-sound">
+        <span>Prompt sounds</span>
+        <input type="checkbox" id="toggle-sound" checked />
+      </label>
     </div>
 
     <!-- Footer -->

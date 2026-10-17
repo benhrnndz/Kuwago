@@ -7,7 +7,9 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "notifications",
+    "storage"
   ],
 
   "host_permissions": [
@@ -23,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["https://meet.google.com/*"],
-      "js": ["content.js"],
+      "js": ["overlay.js", "content.js"],
       "run_at": "document_idle"
     }
   ],

@@ -5,7 +5,30 @@
 
 /* Threshold constants (tunable) */
 var FOCUS_LAPSE_THRESHOLD_MS  = 60 * 1000;  /* 60s — must be unfocused this long to count as a lapse */
-var HEARTBEAT_DISCONNECT_MS   = 45 * 1000;  /* 45s — no heartbeat = disconnected */
+var HEARTBEAT_DISCONNECT_MS   = 60 * 1000;  /* 60s — no heartbeat = disconnected (extension sends every 15s) */
+var CLASS_EARLY_JOIN_MS       = 10 * 60 * 1000; /* Joins up to 10 min before class start still belong to the class */
+
+/**
+ * Limit join-session rows to those belonging to a class session.
+ * Student join rows have their own IDs (sess_xxx), so they are matched to a
+ * class by JoinTime, not by class ID. Without this, a join left over from an
+ * earlier class makes the student look present / on-meet today.
+ *
+ * @param {Object[]} sessions — Rows from the Sessions sheet
+ * @param {string|null} startedAt — ISO start of the active class (falsy = no filtering)
+ * @param {string|null} [endedAt] — ISO end of the class (omit for a live class)
+ * @returns {Object[]}
+ */
+function sessionsInClassWindow(sessions, startedAt, endedAt) {
+  if (!startedAt) return sessions;
+  const fromMs = new Date(startedAt).getTime() - CLASS_EARLY_JOIN_MS;
+  const toMs = endedAt ? new Date(endedAt).getTime() : Infinity;
+  return sessions.filter(function (s) {
+    if (!s.JoinTime) return false;
+    const joinMs = new Date(s.JoinTime).getTime();
+    return joinMs >= fromMs && joinMs <= toMs;
+  });
+}
 
 /**
  * Determine a student's current live status based on their latest session

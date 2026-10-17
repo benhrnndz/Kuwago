@@ -1172,6 +1172,11 @@
   color: var(--status-not-joined);
   background: var(--status-not-joined-bg);
 }
+.attendance-badge.status-none {
+  color: var(--zinc-400);
+  background: transparent;
+  border: 1px dashed var(--zinc-300);
+}
 .attendance-badge.status-excused {
   color: var(--text-secondary);
   background: var(--surface-2);

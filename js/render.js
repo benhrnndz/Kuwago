@@ -279,11 +279,11 @@ export function renderRosterTable(students) {
         </div>
       </td>
       <td class="attendance-cell-click-target">
-        <button class="attendance-badge status-${student.attendanceStatus ? student.attendanceStatus.toLowerCase() : 'absent'}" 
+        <button class="attendance-badge status-${student.attendanceStatus ? student.attendanceStatus.toLowerCase() : 'none'}" 
                 data-name="${escapeHtml(student.name)}" 
-                data-status="${student.attendanceStatus || 'Absent'}"
+                data-status="${student.attendanceStatus || ''}"
                 data-reason="${escapeHtml(student.overrideReason || '')}">
-          ${student.attendanceStatus || 'Absent'}
+          ${student.attendanceStatus || '&mdash;'}
         </button>
       </td>
       <td>
@@ -362,7 +362,7 @@ export function renderAttendanceWidget(students) {
   if (!students) return;
 
   const matched = students.filter(s => s.matched);
-  const joined = matched.filter(s => s.status !== 'not_joined').length;
+  const joined = matched.filter(s => s.liveStatus === 'on_meet' || s.liveStatus === 'away').length;
   const total = matched.length;
   const pct = total > 0 ? Math.round((joined / total) * 100) : 0;
 
