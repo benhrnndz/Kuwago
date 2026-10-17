@@ -1,10 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
-   app.js — Entry point: init, poll loop, nav switching,
+   app.js — Entry point: init, realtime store, nav switching,
    search filtering, table sorting.
+
+   v3: Poll loop replaced by RTDB store listeners.
+       In mock mode (?mock=true), the poll loop is preserved.
    ═══════════════════════════════════════════════════════════ */
 
 import { fetchDashboardData, fetchStudentDetail } from './api.js';
 import { initFirebase, signInWithGoogle } from './firebase.js';
+import { initStore, getState } from './store.js';
+import { buildDashboardData } from './engagement.js';
+import { isMockMode } from './mock.js';
 import {
   renderAll,
   renderRosterTable,
@@ -21,14 +27,14 @@ import { initSessionControl, syncSessionFromPoll, isSessionActive } from './sess
 import { initBatch2Interactions } from './attendance.js';
 
 /* ── Configuration ─────────────────────────────────────── */
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS    = 5000;  /* mock mode only */
 const COUNTDOWN_INTERVAL_MS = 1000;
 
 /* ── State ─────────────────────────────────────────────── */
-let _pollTimer = null;
+let _pollTimer      = null;
 let _countdownTimer = null;
-let _currentView = 'roster'; /* 'roster' | 'unmatched' | 'health' */
-let _latestData = null;
+let _currentView    = 'roster'; /* 'roster' | 'unmatched' | 'health' */
+let _latestData     = null;
 let _pollInProgress = false;
 
 /* ── Init ──────────────────────────────────────────────── */
@@ -40,8 +46,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initPromptModal();
   initRespondentsModal();
   initBatch2Interactions(async () => {
-    /* Trigger a poll immediately when resolution or override succeeds */
-    await poll(true);
+    /* In mock mode, re-poll after resolution/override.
+       In live mode, the store listener fires automatically. */
+    if (isMockMode()) await poll(true);
   });
   initStudentDetail();
   initFilters();
@@ -60,24 +67,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  /* First poll */
-  await poll();
+  if (isMockMode()) {
+    /* ── MOCK MODE: use poll loop as before ─────────────── */
+    await poll();
+    _pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+  } else {
+    /* ── LIVE MODE: subscribe to RTDB store ─────────────── */
+    initStore((state) => {
+      const data = buildDashboardData(state);
+      _latestData = data;
+      renderAll(data, false /* never "poll failed" in RTDB mode */);
+      updateRespondentData(data.activePrompt);
 
-  /* Start the poll loop */
-  _pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+      /* Keep session.js UI in sync */
+      if (data.session) syncSessionFromPoll(data.session);
+      else syncSessionFromPoll(null);
+    });
+  }
 
-  /* Start the countdown refresh loop (for prompt timer) */
+  /* Countdown refresh loop — re-renders prompt timer every second */
   _countdownTimer = setInterval(() => {
-    if (_latestData) {
-      renderSummaryCards(_latestData);
-    }
+    if (_latestData) renderSummaryCards(_latestData);
   }, COUNTDOWN_INTERVAL_MS);
 
   /* Remove the loading state */
   document.querySelector('.shell')?.classList.remove('app-loading');
 });
 
-/* ── Poll ──────────────────────────────────────────────── */
+/* ── Poll (mock mode only) ─────────────────────────────── */
 
 async function poll(force = false) {
   if (_pollInProgress && !force) return;
@@ -91,9 +108,7 @@ async function poll(force = false) {
       updateRespondentData(data.activePrompt);
 
       /* Sync session state from poll data */
-      if (data.session) {
-        syncSessionFromPoll(data.session);
-      }
+      if (data.session) syncSessionFromPoll(data.session);
     }
   } finally {
     _pollInProgress = false;
@@ -122,9 +137,9 @@ function initNavigation() {
     if (viewUnmatched) viewUnmatched.hidden = view !== 'unmatched';
     if (viewHealth)    viewHealth.hidden    = view !== 'health';
 
-    if (view === 'roster' && navRoster) navRoster.classList.add('nav-item--active');
+    if (view === 'roster'    && navRoster)    navRoster.classList.add('nav-item--active');
     if (view === 'unmatched' && navUnmatched) navUnmatched.classList.add('nav-item--active');
-    if (view === 'health' && navHealth) navHealth.classList.add('nav-item--active');
+    if (view === 'health'    && navHealth)    navHealth.classList.add('nav-item--active');
   }
 
   if (navRoster) {
@@ -151,9 +166,7 @@ function initSearch() {
 
   input.addEventListener('input', () => {
     setSearch(input.value);
-    if (_latestData) {
-      renderRosterTable(_latestData.students);
-    }
+    if (_latestData) renderRosterTable(_latestData.students);
   });
 }
 
@@ -165,9 +178,7 @@ function initSort() {
       const key = th.getAttribute('data-sort');
       if (!key) return;
       setSort(key);
-      if (_latestData) {
-        renderRosterTable(_latestData.students);
-      }
+      if (_latestData) renderRosterTable(_latestData.students);
     });
   });
 }
@@ -177,16 +188,12 @@ function initSort() {
 function initFilters() {
   document.querySelectorAll('.filter-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      /* Update active style */
       document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('filter-btn--active'));
       btn.classList.add('filter-btn--active');
 
-      /* Apply filter and re-render */
       const filter = btn.getAttribute('data-filter');
       setFilter(filter);
-      if (_latestData) {
-        renderRosterTable(_latestData.students);
-      }
+      if (_latestData) renderRosterTable(_latestData.students);
     });
   });
 }
@@ -225,47 +232,41 @@ function updatePromptButtonState(isActive) {
 /* ── Student Detail Overlay ────────────────────────────── */
 
 function initStudentDetail() {
-  const modal = document.getElementById('student-detail-modal');
-  const closeBtn = document.getElementById('sd-close-btn');
+  const modal       = document.getElementById('student-detail-modal');
+  const closeBtn    = document.getElementById('sd-close-btn');
   const rosterTable = document.getElementById('roster-table');
 
   if (!modal || !closeBtn || !rosterTable) return;
 
-  function closeModal() {
-    modal.classList.remove('is-open');
-  }
+  function closeModal() { modal.classList.remove('is-open'); }
 
   closeBtn.addEventListener('click', closeModal);
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
-  });
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
   });
 
   rosterTable.addEventListener('click', async (e) => {
     const row = e.target.closest('tr.roster-row');
-    /* Ignore clicks on attendance badges */
     if (!row || e.target.closest('.attendance-badge')) return;
 
     const studentName = row.dataset.name;
     if (!studentName) return;
 
-    /* Get current sessionId from session module */
     const sessionId = _latestData && _latestData.session ? _latestData.session.sessionId : null;
 
-    /* Show modal and loading state */
     modal.classList.add('is-open');
     document.getElementById('sd-loading').hidden = false;
     document.getElementById('sd-content').hidden = true;
     document.getElementById('sd-name').textContent = studentName;
 
     const data = await fetchStudentDetail(sessionId, studentName);
-    
+
     if (data && !data.error) {
       renderStudentDetail(data);
     } else {
-      document.getElementById('sd-loading').innerHTML = '<p style="color:var(--status-unmatched)">Error loading student data.</p>';
+      document.getElementById('sd-loading').innerHTML =
+        '<p style="color:var(--status-unmatched)">Error loading student data.</p>';
     }
   });
 }
