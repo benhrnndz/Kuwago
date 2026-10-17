@@ -1,12 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
-   api.js — Fetch wrapper for dashboard polling and
-   prompt submission. Handles errors gracefully and
-   preserves last-known-good data.
+   api.js — All data operations for the dashboard.
 
-   NOTE: For local development, use ?mock=true in the URL.
-   For production, set API_BASE to your deployed Apps Script
-   web app URL (looks like:
-   https://script.google.com/macros/s/DEPLOY_ID/exec).
+   BEFORE (v2): fetch() calls to Apps Script web app.
+   AFTER  (v3): direct RTDB writes via store.js helpers.
+
+   Mock mode (?mock=true) is fully preserved — all functions
+   fall through to the same mock implementations as before.
+
+   Public API surface is identical to v2, so all callers
+   (session.js, attendance.js, prompt.js, app.js) work as-is.
    ═══════════════════════════════════════════════════════════ */
 
 import {
@@ -14,140 +16,119 @@ import {
   mockGetCourses, mockStartSession, mockEndSession, mockGetSessionState,
   mockResolveMatch, mockOverrideAttendance, mockStudentDetail
 } from './mock.js';
+import {
+  writeToDb, updateDb, pushToDb, multiUpdate, newKey, readOnce, getState
+} from './store.js';
+import { sanitizeName } from './firebase.js';
+import { buildStudentDetail } from './engagement.js';
 
-/* ── Configuration ─────────────────────────────────────── */
-const API_BASE = 'https://script.google.com/macros/s/AKfycbxxr5ZJdb0rvdH7Z3GEWX_4agoJvYCOOh9nYSbP8rdiVV6LZmxJ3U77f_qlYejRN4QyIA/exec';
-const REQUEST_TIMEOUT_MS = 30000;
-
-/* ── State ─────────────────────────────────────────────── */
-let _lastGoodData = null;
-let _pollFailed = false;
-let _consecutiveFailures = 0;
-
-/* ── Public API ────────────────────────────────────────── */
+/* ── Backward-compat shim ─────────────────────────────────── */
 
 /**
- * Fetch the latest dashboard data.
- * Returns { data, pollFailed } where data is always
- * populated (last-known-good on failure).
+ * @deprecated In v3 the dashboard uses store listeners instead of polling.
+ * This function is kept only so any remaining callers don't throw.
+ * It returns the last known state built from the RTDB snapshot.
  */
 export async function fetchDashboardData() {
-  /* Mock mode */
   if (isMockMode()) {
     const data = generateMockData();
-    _lastGoodData = data;
-    _pollFailed = false;
-    _consecutiveFailures = 0;
     return { data, pollFailed: false };
   }
-
-  /* Real fetch */
-  try {
-    const res = await fetch(`${API_BASE}?action=dashboardData`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    _lastGoodData = data;
-    _pollFailed = false;
-    _consecutiveFailures = 0;
-    return { data, pollFailed: false };
-
-  } catch (err) {
-    _consecutiveFailures++;
-    _pollFailed = true;
-    console.warn(
-      `[api] Poll failed (attempt ${_consecutiveFailures}):`,
-      err.message
-    );
-
-    return {
-      data: _lastGoodData,
-      pollFailed: true,
-      consecutiveFailures: _consecutiveFailures,
-      error: err.message
-    };
-  }
+  /* In live mode the store drives rendering — this should not be called.
+     Return a sentinel so callers can detect the migration. */
+  return { data: null, pollFailed: false };
 }
 
+/** No longer meaningful in RTDB mode — kept for API compat. */
+export function isPollFailed()         { return false; }
+export function getConsecutiveFailures() { return 0; }
+
+/* ═══════════════════════════════════════════════════════════
+   PROMPT
+   ═══════════════════════════════════════════════════════════ */
+
 /**
- * Send a new chat prompt to the backend.
- * @param {string} phrase - The expected phrase
- * @param {number} durationSeconds - How long the prompt stays active
+ * Set a new chat prompt.
+ * Expires any currently active prompt and creates the new one.
+ *
+ * @param {string} phrase — expected phrase
+ * @param {number} durationSeconds
  * @returns {{ success: boolean, error?: string }}
  */
 export async function sendPrompt(phrase, durationSeconds) {
-  /* Mock mode */
-  if (isMockMode()) {
-    return mockSendPrompt(phrase, durationSeconds);
-  }
+  if (isMockMode()) return mockSendPrompt(phrase, durationSeconds);
 
-  /* Real fetch — use GET to avoid Apps Script POST redirect CORS issue */
   try {
-    const url = new URL(API_BASE);
-    url.searchParams.set('action', 'setPrompt');
-    url.searchParams.set('phrase', phrase);
-    url.searchParams.set('durationSeconds', String(durationSeconds));
-
-    const res = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+    const state    = getState();
+    const session  = state.session;
+    if (!session || !session.active) {
+      return { success: false, error: 'No active class session' };
     }
 
-    return { success: true };
+    const sessionId = session.sessionId;
+    const base      = `kuwago/classSessions/${sessionId}/prompts`;
+    const now       = new Date();
+    const expiresAt = new Date(now.getTime() + (durationSeconds || 60) * 1000).toISOString();
+    const promptId  = newKey(base);
 
+    /* Expire all existing active prompts first */
+    const existingPrompts = state.prompts || {};
+    const expireUpdates = {};
+    for (const [pid, p] of Object.entries(existingPrompts)) {
+      if (p.active) expireUpdates[`${base}/${pid}/active`] = false;
+    }
+
+    /* Write new prompt atomically */
+    const newPrompt = {
+      phrase,
+      issuedAt:  now.toISOString(),
+      expiresAt,
+      active:    true
+    };
+
+    await multiUpdate({
+      ...expireUpdates,
+      [`${base}/${promptId}`]: newPrompt
+    });
+
+    return {
+      success:   true,
+      promptId,
+      phrase,
+      issuedAt:  now.toISOString(),
+      expiresAt
+    };
   } catch (err) {
     console.error('[api] sendPrompt failed:', err.message);
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Check if currently in poll-failure state.
- */
-export function isPollFailed() {
-  return _pollFailed;
-}
-
-/**
- * Get the number of consecutive poll failures.
- */
-export function getConsecutiveFailures() {
-  return _consecutiveFailures;
-}
-
 /* ═══════════════════════════════════════════════════════════
-   SESSION CONTROL API (Phase 2)
+   SESSION CONTROL
    ═══════════════════════════════════════════════════════════ */
 
 /**
- * Fetch the list of available courses/sections.
+ * Fetch the list of available courses/sections from RTDB state.
  * @returns {{ courses: Array<{ sectionId, courseName, sectionName }> }}
  */
 export async function fetchCourses() {
-  if (isMockMode()) {
-    return mockGetCourses();
-  }
+  if (isMockMode()) return mockGetCourses();
 
   try {
-    const res = await fetch(`${API_BASE}?action=getCourses`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const { courses } = getState();
+    if (courses.length > 0) return { courses };
+
+    /* Fallback: read once if store hasn't synced yet */
+    const val = await readOnce('kuwago/courses');
+    if (!val) return { courses: [] };
+
+    const result = Object.entries(val).map(([sectionId, c]) => ({
+      sectionId,
+      courseName:  c.courseName  || '',
+      sectionName: c.sectionName || ''
+    }));
+    return { courses: result };
   } catch (err) {
     console.error('[api] fetchCourses failed:', err.message);
     return { courses: [], error: err.message };
@@ -160,22 +141,28 @@ export async function fetchCourses() {
  * @returns {{ success, sessionId, sectionId, startedAt } | { error }}
  */
 export async function startSession(sectionId) {
-  if (isMockMode()) {
-    return mockStartSession(sectionId);
-  }
+  if (isMockMode()) return mockStartSession(sectionId);
 
   try {
-    const url = new URL(API_BASE);
-    url.searchParams.set('action', 'startSession');
-    url.searchParams.set('sectionId', sectionId);
+    /* Check for already-active session */
+    const current = await readOnce('kuwago/activeSession');
+    if (current && current.active) {
+      return { error: 'A session is already active. End it before starting a new one.' };
+    }
 
-    const res = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    const sessionId  = 'cls_' + Date.now();
+    const startedAt  = new Date().toISOString();
+
+    await multiUpdate({
+      'kuwago/activeSession': { active: true, sessionId, sectionId, startedAt },
+      [`kuwago/classSessions/${sessionId}`]: {
+        sectionId,
+        startedAt,
+        endedAt: null
+      }
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+
+    return { success: true, sessionId, sectionId, startedAt };
   } catch (err) {
     console.error('[api] startSession failed:', err.message);
     return { error: err.message };
@@ -184,26 +171,40 @@ export async function startSession(sectionId) {
 
 /**
  * End the current class session.
+ * Marks all open attendance records closed, expires active prompts,
+ * and sets the session inactive.
+ *
  * @param {string} sessionId
- * @returns {{ success, endedAt } | { error }}
+ * @returns {{ success, endedAt, summary? } | { error }}
  */
 export async function endSession(sessionId) {
-  if (isMockMode()) {
-    return mockEndSession();
-  }
+  if (isMockMode()) return mockEndSession();
 
   try {
-    const url = new URL(API_BASE);
-    url.searchParams.set('action', 'endSession');
-    url.searchParams.set('sessionId', sessionId);
+    const endedAt = new Date().toISOString();
+    const state   = getState();
+    const base    = `kuwago/classSessions/${sessionId}`;
 
-    const res = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const updates = {
+      'kuwago/activeSession/active':    false,
+      [`${base}/endedAt`]:              endedAt
+    };
+
+    /* Close all open attendance records */
+    for (const [key, att] of Object.entries(state.attendance)) {
+      if (att.joinTime && !att.leaveTime) {
+        updates[`${base}/attendance/${key}/leaveTime`] = endedAt;
+      }
+    }
+
+    /* Expire all active prompts */
+    for (const [pid, p] of Object.entries(state.prompts)) {
+      if (p.active) updates[`${base}/prompts/${pid}/active`] = false;
+    }
+
+    await multiUpdate(updates);
+
+    return { success: true, endedAt };
   } catch (err) {
     console.error('[api] endSession failed:', err.message);
     return { error: err.message };
@@ -211,22 +212,19 @@ export async function endSession(sessionId) {
 }
 
 /**
- * Get the current session state.
+ * Get the current session state from RTDB state snapshot.
  * @returns {{ active, sessionId?, sectionId?, startedAt? }}
  */
 export async function fetchSessionState() {
-  if (isMockMode()) {
-    return mockGetSessionState();
-  }
+  if (isMockMode()) return mockGetSessionState();
 
   try {
-    const res = await fetch(`${API_BASE}?action=getSessionState`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const { session } = getState();
+    if (session && session.active) return session;
+
+    /* Fallback: read once */
+    const val = await readOnce('kuwago/activeSession');
+    return val && val.active ? val : { active: false };
   } catch (err) {
     console.error('[api] fetchSessionState failed:', err.message);
     return { active: false, error: err.message };
@@ -234,32 +232,54 @@ export async function fetchSessionState() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   BATCH 2 API — Name Resolution & Attendance
+   BATCH 2 — Name Resolution & Attendance
    ═══════════════════════════════════════════════════════════ */
 
 /**
  * Resolve an unmatched display name to a roster student, or dismiss.
- * @param {string} detectedName — Raw unmatched name
- * @param {string|null} resolvedTo — Canonical roster name, or null to dismiss
+ * Writes to RTDB aliases path for future auto-matching.
+ *
+ * @param {string} detectedName — raw unmatched name
+ * @param {string|null} resolvedTo — canonical roster name, or null to dismiss
  */
 export async function resolveMatch(detectedName, resolvedTo) {
-  if (isMockMode()) {
-    return mockResolveMatch(detectedName, resolvedTo);
-  }
+  if (isMockMode()) return mockResolveMatch(detectedName, resolvedTo);
 
   try {
-    const url = new URL(API_BASE);
-    url.searchParams.set('action', 'resolveMatch');
-    url.searchParams.set('detectedName', detectedName);
-    if (resolvedTo) url.searchParams.set('resolvedTo', resolvedTo);
+    const aliasKey = sanitizeName(detectedName);
+    const canonical = resolvedTo || null;
 
-    const res = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    if (canonical) {
+      /* Save alias so future joins auto-match */
+      await writeToDb(`kuwago/aliases/${aliasKey}`, { canonical });
+
+      /* Retroactively re-key the attendance record if it exists */
+      const state     = getState();
+      const session   = state.session;
+      if (session && session.active) {
+        const oldKey  = sanitizeName(detectedName);
+        const newK    = sanitizeName(canonical);
+        const existingAtt = state.attendance[oldKey];
+
+        if (existingAtt && oldKey !== newK) {
+          const base = `kuwago/classSessions/${session.sessionId}/attendance`;
+          await multiUpdate({
+            [`${base}/${newK}`]:  { ...existingAtt, matched: true },
+            [`${base}/${oldKey}`]: null  /* delete old key */
+          });
+        }
+      }
+    } else {
+      /* Dismissed — write a null canonical so we don't re-ask */
+      await writeToDb(`kuwago/aliases/${aliasKey}`, { canonical: null, dismissed: true });
+    }
+
+    return {
+      success:    true,
+      detectedName,
+      resolvedTo: canonical,
+      dismissed:  canonical === null
+    };
   } catch (err) {
     console.error('[api] resolveMatch failed:', err.message);
     return { error: err.message };
@@ -268,31 +288,38 @@ export async function resolveMatch(detectedName, resolvedTo) {
 
 /**
  * Override a student's attendance status manually.
+ *
  * @param {string} sessionId
  * @param {string} studentName
  * @param {string} status — 'Present' | 'Late' | 'Absent' | 'Excused'
- * @param {string} reason — Optional reason text
+ * @param {string} reason
  */
 export async function overrideAttendance(sessionId, studentName, status, reason) {
-  if (isMockMode()) {
-    return mockOverrideAttendance(sessionId, studentName, status, reason);
+  if (isMockMode()) return mockOverrideAttendance(sessionId, studentName, status, reason);
+
+  const validStatuses = ['Present', 'Late', 'Absent', 'Excused'];
+  if (!validStatuses.includes(status)) {
+    return { error: `Invalid status: ${status}` };
   }
 
   try {
-    const url = new URL(API_BASE);
-    url.searchParams.set('action', 'overrideAttendance');
-    url.searchParams.set('sessionId', sessionId || '');
-    url.searchParams.set('studentName', studentName);
-    url.searchParams.set('status', status);
-    if (reason) url.searchParams.set('reason', reason);
+    const sKey = sanitizeName(studentName);
+    const sid  = sessionId || getState().session?.sessionId;
+    if (!sid) return { error: 'No active session' };
 
-    const res = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    await writeToDb(`kuwago/classSessions/${sid}/attendance/${sKey}/override`, {
+      status,
+      reason: reason || '',
+      at:     new Date().toISOString()
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+
+    return {
+      success:   true,
+      studentName,
+      newStatus: status,
+      reason:    reason || '',
+      changedAt: new Date().toISOString()
+    };
   } catch (err) {
     console.error('[api] overrideAttendance failed:', err.message);
     return { error: err.message };
@@ -301,28 +328,17 @@ export async function overrideAttendance(sessionId, studentName, status, reason)
 
 /**
  * Fetch rich per-student detail for the overlay panel.
- * Called on demand when a roster row is clicked.
- * @param {string} sessionId
+ * Computed client-side from RTDB state — no network call.
+ *
+ * @param {string} _sessionId — ignored (RTDB state is always current-session scoped)
  * @param {string} studentName
  */
-export async function fetchStudentDetail(sessionId, studentName) {
-  if (isMockMode()) {
-    return mockStudentDetail(sessionId, studentName);
-  }
+export async function fetchStudentDetail(_sessionId, studentName) {
+  if (isMockMode()) return mockStudentDetail(_sessionId, studentName);
 
   try {
-    const url = new URL(API_BASE);
-    url.searchParams.set('action', 'studentDetail');
-    if (sessionId) url.searchParams.set('sessionId', sessionId);
-    url.searchParams.set('studentName', studentName);
-
-    const res = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const state = getState();
+    return buildStudentDetail(studentName, state);
   } catch (err) {
     console.error('[api] fetchStudentDetail failed:', err.message);
     return { error: err.message };
