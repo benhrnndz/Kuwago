@@ -1,0 +1,53 @@
+{
+  "rules": {
+    "kuwago": {
+
+      "courses": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.token.email_verified == true"
+      },
+
+      "activeSession": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.token.email_verified == true"
+      },
+
+      "classSessions": {
+        "$sessionId": {
+          ".read": "auth != null",
+
+          "attendance": {
+            "$studentKey": {
+              ".write": "auth != null"
+            }
+          },
+
+          "focusEvents": {
+            ".write": "auth != null"
+          },
+
+          "prompts": {
+            ".read":  "auth != null",
+            ".write": "auth != null && auth.token.email_verified == true"
+          },
+
+          "responses": {
+            ".write": "auth != null"
+          }
+        }
+      },
+
+      "heartbeats": {
+        "$studentKey": {
+          ".read":  "auth != null",
+          ".write": "auth != null"
+        }
+      },
+
+      "aliases": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.token.email_verified == true"
+      }
+    }
+  }
+}
