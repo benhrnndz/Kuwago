@@ -21,7 +21,7 @@
 
 'use strict';
 
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
 
 /* ── Firebase Admin SDK ─────────────────────────────────── */
@@ -51,8 +51,8 @@ Then save it as scripts/serviceAccountKey.json and re-run.
 const serviceAccount = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_PATH, 'utf8'));
 
 admin.initializeApp({
-  credential:   admin.credential.cert(serviceAccount),
-  databaseURL:  'https://kuwago-d6c14-default-rtdb.asia-southeast1.firebasedatabase.app'
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: 'https://kuwago-d6c14-default-rtdb.asia-southeast1.firebasedatabase.app'
 });
 
 const db = admin.database();
@@ -78,10 +78,64 @@ function sanitizeName(name) {
  */
 const COURSES = [
   {
-    sectionId:   'it101_a',
-    courseName:  'IT 101',
-    sectionName: 'Section A',
+    sectionId: 'BSIT 3-5',
+    courseName: 'INTE 301',
+    sectionName: 'BSIT 3-5',
     students: [
+      'A Jose, Justin Gabriel',
+      'Abenoja, Ching Mae',
+      'Arcebuche, Mao Miguel',
+      'Bajada, Michael Habakkuk M.',
+      'Ballester, Eliana Maxine',
+      'Beros, Jose Myrson',
+      'Biando, Sofia Ela',
+      'Bugal, Sheine Grace E.',
+      'Cardona Miguel Jeron',
+      'Celindro Aaron Creed P.',
+      'Cledera, Aliezza Angelique P.',
+      'Coloma Kevin',
+      'Conguis, Francis Philip',
+      'Cruz, Genesis Lance V.',
+      'Cruz, Kurt Anthony T.',
+      'Dela Rama, Antonio Miguel',
+      'Estrella, John Michael R.',
+      'Euls Matrix Dollesin',
+      'Flores, Hannah Lauren A.',
+      'Francisco, John Eiyen D.',
+      'Galdo, Monico L.',
+      'Garcia, Patrick Gabriel R.',
+      'Gasis, Janeah Marie M.',
+      'Gorgonio, Arvin Rovic R.',
+      'Hernandez, Harold Benedict',
+      'Ian Paulo Gilera',
+      'Ilagan, Tristan Patrick E.',
+      'Lin, Swee Genesis',
+      'Maguillo Ivan Josh R.',
+      'Mallari, Erica',
+      'Masmela, Savannah Tricia L.',
+      'Mendoza, Daniella J.',
+      'Miave James Frederick',
+      'Montemayor, Carl Denver H.',
+      'Murillo, Jan Manuel',
+      'Oriñada Joshua D.',
+      'Osorio, Jeseiah Marie Y.',
+      'Pacleb, Jerome Carlo G.',
+      'Panguelo, Clarence Brent F.',
+      'Panganiban, Lester',
+      'Patawaran, Omner James C.',
+      'Perez, Chezter Anthony I.',
+      'Policarpio, Dallin Russell O.',
+      'Pradez, James Paul M.',
+      'Prestosa, Angel Jamil P.',
+      'ramales charis shane',
+      'Reboldera, Joshua Samuel A.',
+      'Reyes, Danly',
+      'Reyes, Rojan Aizel F.',
+      'Sajuela, Renz Kerby',
+      'Saulo Ethan Xander V.',
+      'Tamayo, Francis John M.',
+      'Tan, Albrecht Jhon',
+      'Villegas Kezia'
       /* Paste your roster here — one name per line */
       /* Example format: 'Last Name, First Name M.' */
     ]
@@ -160,7 +214,7 @@ async function fetchRosterFromAppsScript(appsScriptUrl, sectionId) {
       let data = '';
       res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
-        try   { resolve(JSON.parse(data)); }
+        try { resolve(JSON.parse(data)); }
         catch (e) { reject(e); }
       });
     }).on('error', reject);
