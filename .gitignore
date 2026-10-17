@@ -27,3 +27,6 @@ skills-lock.json
 .env
 .env.local
 *.local
+
+# ── Firebase service account (never commit!) ───────────────
+scripts/serviceAccountKey.json

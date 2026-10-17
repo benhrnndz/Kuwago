@@ -4,7 +4,9 @@
   "description": "Real-time student engagement monitor for Google Meet classrooms. Built for professors who want a live view of who is joined, focused, and participating.",
   "main": "serve-dashboard.js",
   "scripts": {
-    "start": "node serve-dashboard.js"
+    "start": "node serve-dashboard.js",
+    "seed":  "node scripts/seed-rtdb.js",
+    "seed:wipe": "node scripts/seed-rtdb.js --wipe"
   },
   "keywords": [
     "google-meet",
@@ -13,7 +15,8 @@
     "dashboard",
     "professor",
     "attendance",
-    "google-apps-script",
+    "firebase",
+    "rtdb",
     "chrome-extension",
     "education"
   ],
@@ -21,5 +24,8 @@
   "license": "UNLICENSED",
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "firebase-admin": "^12.0.0"
   }
 }
