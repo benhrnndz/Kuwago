@@ -4,6 +4,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { fetchDashboardData, fetchStudentDetail } from './api.js';
+import { initFirebase, signInWithGoogle } from './firebase.js';
 import {
   renderAll,
   renderRosterTable,
@@ -45,6 +46,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   initStudentDetail();
   initFilters();
   initSessionSummary();
+
+  /* Initialize Firebase Auth (no-op in mock mode) */
+  await initFirebase();
+  document.getElementById('btn-google-signin')?.addEventListener('click', signInWithGoogle);
 
   /* Initialize session control */
   await initSessionControl((isActive, summary) => {

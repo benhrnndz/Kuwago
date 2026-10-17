@@ -14,6 +14,11 @@
 
   <!-- Favicon (inline SVG data URI) -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='6' fill='%234F46E5'/><circle cx='16' cy='16' r='11' fill='none' stroke='%234F46E5' stroke-width='2' opacity='0.4'/><circle cx='16' cy='16' r='15' fill='none' stroke='%234F46E5' stroke-width='1.5' opacity='0.2'/></svg>" />
+
+  <!-- Firebase SDK (compat CDN — must load before ES modules) -->
+  <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-database-compat.js"></script>
 </head>
 <body>
   <div class="backdrop">
@@ -26,6 +31,12 @@
         <!-- Brand (Text Only, No Logo) -->
         <div class="sidebar__header">
           <span class="sidebar__brand">Dashboard</span>
+          <!-- Google sign-in — hidden once authenticated -->
+          <button id="btn-google-signin" class="btn btn--sm btn--outline sidebar__signin" style="display:none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            Sign in
+          </button>
+          <span id="auth-user-name" class="sidebar__auth-label" style="display:none"></span>
         </div>
 
         <!-- Royal Blue Sidebar Panel -->
