@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
-   popup.js — Status display for the extension popup.
-   Queries the background worker for current state and
-   renders it in the premium popup UI.
+   popup.js — Status display for the Kuwago extension popup.
+   Queries the background worker for current state and renders
+   it in the redesigned popup UI.
    ═══════════════════════════════════════════════════════════ */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const promptCard = document.getElementById('card-prompt');
   const soundToggle = document.getElementById('toggle-sound');
 
-  /* Prompt sounds on/off (read live by the Meet overlay) */
+  /* ── Prompt sounds on/off ─────────────────────────────── */
   try {
     const { kuwagoMuted } = await chrome.storage.local.get('kuwagoMuted');
     soundToggle.checked = !kuwagoMuted;
@@ -23,9 +23,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     soundToggle.disabled = true;
   }
 
-
+  /* ── Main status from background worker ───────────────── */
   try {
-    /* Query background worker for extension status */
     const status = await chrome.runtime.sendMessage({ type: 'GET_EXTENSION_STATUS' });
 
     if (!status) {
@@ -36,31 +35,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     /* Connection status */
     const isConfigured = !!status.rtdbBase;
-
     if (isConfigured) {
       setConnectionBadge(badgeEl, badgeLbl, 'connected', 'Connected');
     } else {
       setConnectionBadge(badgeEl, badgeLbl, 'warning', 'Setup needed');
     }
 
-    /* Active Meet tabs */
+    /* Active Meet tab */
     if (status.activeTabs && status.activeTabs.length > 0) {
       const tab = status.activeTabs[0];
-
       meetEl.innerHTML = '<span class="dot dot--green"></span><span>Active</span>';
 
-      /* Student name */
       if (tab.studentName) {
         nameEl.textContent = tab.studentName;
-        nameEl.classList.remove('card__value--muted');
+        nameEl.className = 'info-card__value info-card__value--sm';
       } else {
         nameEl.innerHTML = '<span class="dot dot--amber"></span><span>Detecting…</span>';
-        nameEl.classList.add('card__value--amber');
+        nameEl.className = 'info-card__value info-card__value--sm info-card__value--amber';
       }
     } else {
       meetEl.innerHTML = '<span class="dot dot--gray"></span><span>No active Meet</span>';
       nameEl.textContent = '—';
-      nameEl.classList.add('card__value--muted');
+      nameEl.className = 'info-card__value info-card__value--sm info-card__value--muted';
     }
 
     /* Active prompt */
@@ -72,21 +68,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderPromptCard(promptCard, null);
   }
 
-  /* Also try to get status from the content script on the active tab */
+  /* ── Supplement from the active Meet tab content script ── */
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab && tab.url && tab.url.startsWith('https://meet.google.com/')) {
       const contentStatus = await chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' });
       if (contentStatus && contentStatus.detectedName) {
-        const currentName = nameEl.textContent;
-        if (currentName === '—' || currentName === 'Detecting…' || currentName === '') {
+        const current = nameEl.textContent;
+        if (current === '—' || current === 'Detecting…' || current === '') {
           nameEl.textContent = contentStatus.detectedName;
-          nameEl.className = 'card__value card__value--sm';
+          nameEl.className = 'info-card__value info-card__value--sm';
         }
       }
     }
   } catch {
-    /* Content script might not be injected yet */
+    /* Content script might not be injected yet — silently ignore */
   }
 });
 
@@ -94,17 +90,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function setConnectionBadge(badgeEl, labelEl, state, text) {
   badgeEl.className = 'header__badge';
-  switch (state) {
-    case 'connected':
-      badgeEl.classList.add('header__badge--connected');
-      break;
-    case 'warning':
-      badgeEl.classList.add('header__badge--warning');
-      break;
-    case 'error':
-      badgeEl.classList.add('header__badge--error');
-      break;
-  }
+  if (state === 'connected') badgeEl.classList.add('header__badge--connected');
+  if (state === 'warning')   badgeEl.classList.add('header__badge--warning');
+  if (state === 'error')     badgeEl.classList.add('header__badge--error');
   labelEl.textContent = text;
 }
 
@@ -125,7 +113,7 @@ function renderPromptCard(container, promptPhrase) {
     container.innerHTML = `
       <div class="prompt-card prompt-card--empty">
         <div class="prompt-card__label">Active Prompt</div>
-        <div class="prompt-card__phrase">No active prompt</div>
+        <div class="prompt-card__phrase">No active prompt right now</div>
       </div>
     `;
   }

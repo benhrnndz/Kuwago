@@ -7,7 +7,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { fetchDashboardData, fetchStudentDetail } from './api.js';
-import { initFirebase, signInWithGoogle, onAuthChange } from './firebase.js';
+import { initFirebase, signInWithGoogle, signOut, onAuthChange } from './firebase.js';
 import { initStore, stopStore, getState } from './store.js';
 import { buildDashboardData } from './engagement.js';
 import { isMockMode } from './mock.js';
@@ -40,6 +40,17 @@ let _pollInProgress = false;
 /* ── Init ──────────────────────────────────────────────── */
 
 document.addEventListener('DOMContentLoaded', async () => {
+  /* ── Auth Gate (live mode only) ─────────────────────────
+     If not signed in, redirect to the login page.
+     Mock mode bypasses the gate entirely. */
+  if (!isMockMode()) {
+    const user = await initFirebase();
+    if (!user) {
+      window.location.replace('login.html');
+      return; /* Stop dashboard initialization */
+    }
+  }
+
   initNavigation();
   initSearch();
   initSort();
@@ -54,9 +65,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFilters();
   initSessionSummary();
 
-  /* Initialize Firebase Auth (no-op in mock mode) */
-  await initFirebase();
+  /* Initialize Firebase Auth (already done for live mode above, no-op for mock) */
+  if (isMockMode()) await initFirebase();
   document.getElementById('btn-google-signin')?.addEventListener('click', signInWithGoogle);
+
+  /* Sign-out button — only visible in live mode */
+  const signOutBtn = document.getElementById('btn-signout');
+  if (!isMockMode() && signOutBtn) {
+    signOutBtn.style.display = '';
+    signOutBtn.addEventListener('click', async () => {
+      await signOut();
+      window.location.replace('login.html');
+    });
+  }
+
 
   /* Initialize session control */
   await initSessionControl((isActive, summary) => {

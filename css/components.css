@@ -105,6 +105,30 @@
   transform: scale(0.95);
 }
 
+/* ── Sign-out button (topbar) ──────────────────────────── */
+.btn--signout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  color: var(--zinc-400);
+  transition: all var(--duration-normal) var(--ease-out);
+  margin-left: var(--space-2);
+  flex-shrink: 0;
+}
+
+.btn--signout:hover {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+.btn--signout:active {
+  transform: scale(0.92);
+}
+
+
 /* ── Badges ────────────────────────────────────────────── */
 .badge {
   display: inline-flex;

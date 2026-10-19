@@ -26,6 +26,11 @@ let _app  = null;
 let _db   = null;
 let _auth = null;
 let _user = null;
+let _googleAccessToken = null;  /* OAuth token for Google APIs (Sheets, Drive) */
+
+const _GAT_KEY    = '_kuwago_gat';      /* sessionStorage key for Google access token */
+const _GAT_EXP    = '_kuwago_gat_exp';  /* sessionStorage key for token expiry (ms) */
+const _TOKEN_TTL  = 55 * 60 * 1000;    /* 55 min — tokens last ~1hr, refresh before expiry */
 
 let _authResolved        = false;
 let _authReadyCallbacks  = [];
@@ -40,6 +45,18 @@ let _authChangeCallbacks = [];
  */
 export function initFirebase() {
   if (isMockMode()) return Promise.resolve(null);
+
+  /* Restore any previously captured Google access token from sessionStorage */
+  try {
+    const stored = sessionStorage.getItem(_GAT_KEY);
+    const expiry = parseInt(sessionStorage.getItem(_GAT_EXP) || '0', 10);
+    if (stored && Date.now() < expiry) {
+      _googleAccessToken = stored;
+    } else {
+      sessionStorage.removeItem(_GAT_KEY);
+      sessionStorage.removeItem(_GAT_EXP);
+    }
+  } catch { /* private browsing may block sessionStorage */ }
 
   _app  = firebase.initializeApp(FIREBASE_CONFIG);
   _auth = firebase.auth();
@@ -76,6 +93,12 @@ export function getAuth() { return _auth; }
 export function getCurrentUser() { return _user; }
 
 /**
+ * Get the Google OAuth access token captured at sign-in time.
+ * Valid for ~55 min. Returns null if not signed in or token expired.
+ */
+export function getGoogleAccessToken() { return _googleAccessToken; }
+
+/**
  * Register a callback that fires once auth state is first known.
  * If auth is already resolved, fires immediately (synchronously).
  * @param {Function} cb - called with (user: firebase.User|null)
@@ -107,8 +130,21 @@ export function onAuthChange(cb) {
 export async function signInWithGoogle() {
   if (!_auth) return;
   const provider = new firebase.auth.GoogleAuthProvider();
+  /* Request Sheets + Drive scopes so we can write reports to the professor's Drive */
+  provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+  provider.addScope('https://www.googleapis.com/auth/drive.file');
   try {
-    await _auth.signInWithPopup(provider);
+    const result = await _auth.signInWithPopup(provider);
+    /* Capture the Google OAuth access token and persist it across page navigations.
+       NOTE: result.credential.accessToken is the compat-SDK way (not credentialFromResult). */
+    const token = result.credential?.accessToken;
+    if (token) {
+      _googleAccessToken = token;
+      try {
+        sessionStorage.setItem(_GAT_KEY, token);
+        sessionStorage.setItem(_GAT_EXP, String(Date.now() + _TOKEN_TTL));
+      } catch { /* ignore */ }
+    }
   } catch (err) {
     console.error('[firebase] Google sign-in failed:', err.code, err.message);
 
@@ -134,6 +170,11 @@ export async function signInWithGoogle() {
 export async function signOut() {
   if (!_auth) return;
   try {
+    _googleAccessToken = null;
+    try {
+      sessionStorage.removeItem(_GAT_KEY);
+      sessionStorage.removeItem(_GAT_EXP);
+    } catch { /* ignore */ }
     await _auth.signOut();
   } catch (err) {
     console.error('[firebase] Sign-out failed:', err.message);

@@ -30,3 +30,5 @@ skills-lock.json
 
 # ── Firebase service account (never commit!) ───────────────
 scripts/serviceAccountKey.json
+
+.vercel

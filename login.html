@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kuwago — Sign In</title>
+  <meta name="description" content="Sign in to the Kuwago Professor Dashboard to monitor student engagement during live Google Meet classes." />
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/login.css" />
+
+  <!-- Favicon (same as dashboard) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='6' fill='%234F46E5'/><circle cx='16' cy='16' r='11' fill='none' stroke='%234F46E5' stroke-width='2' opacity='0.4'/><circle cx='16' cy='16' r='15' fill='none' stroke='%234F46E5' stroke-width='1.5' opacity='0.2'/></svg>" />
+
+  <!-- Firebase SDK (compat CDN) -->
+  <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js"></script>
+</head>
+<body>
+
+  <!-- ══ Backdrop (identical gradient to dashboard) ══ -->
+  <div class="login-backdrop">
+
+    <!-- ══ Login Card ══ -->
+    <div class="login-card" id="login-card">
+
+      <!-- Brand -->
+      <div class="login-brand">
+        <div class="login-brand__logo">
+          <!-- Owl-eye Kuwago wordmark -->
+          <span class="login-brand__text">Kuwag</span><span class="login-brand__eye">
+            <svg class="login-brand__owl" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="14" cy="14" r="12" stroke="#1d61ea" stroke-width="2.5" fill="none"/>
+              <circle cx="14" cy="14" r="5" fill="#1d61ea"/>
+              <circle cx="16" cy="12" r="1.5" fill="#ffffff"/>
+            </svg>
+          </span>
+        </div>
+        <p class="login-brand__subtitle">Professor Dashboard</p>
+      </div>
+
+      <!-- Heading -->
+      <div class="login-heading">
+        <h1>Welcome back</h1>
+        <p>Sign in to your professor account</p>
+      </div>
+
+      <!-- Primary: Google Sign-In -->
+      <button class="login-google-btn" id="btn-google-signin" type="button">
+        <svg class="login-google-btn__icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 001 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        <span>Sign in with Google</span>
+      </button>
+
+      <!-- Divider -->
+      <div class="login-divider">
+        <span>or</span>
+      </div>
+
+      <!-- Email/Password (decorative — professors use Google) -->
+      <form class="login-form" onsubmit="return false;" aria-label="Email sign-in (disabled)">
+        <div class="login-field">
+          <input type="email" placeholder="Email" disabled autocomplete="off" />
+        </div>
+        <div class="login-field">
+          <input type="password" placeholder="Password" disabled autocomplete="off" />
+        </div>
+        <button class="login-submit-btn" type="button" disabled>Sign in</button>
+      </form>
+
+      <!-- Error message area -->
+      <p class="login-error" id="login-error" hidden></p>
+
+    </div><!-- /login-card -->
+
+    <!-- Footer -->
+    <footer class="login-footer">
+      <p>&copy; 2024 Kuwago &middot; Student Engagement Monitor</p>
+    </footer>
+
+  </div><!-- /login-backdrop -->
+
+  <!-- Login script (ES module) -->
+  <script type="module" src="js/login.js"></script>
+
+</body>
+</html>

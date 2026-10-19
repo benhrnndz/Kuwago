@@ -1,58 +1,26 @@
 /* ═══════════════════════════════════════════════════════════
-   layout.css — Shell, Sidebar, Topbar, Content Gri/* ── Backdrop ──────────────────────────────────────────── */
+   layout.css — Shell, Sidebar, Topbar, Content Grid
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Backdrop (full-page container, no more floating card) ── */
 .backdrop {
   display: flex;
-  align-items: center;
-  justify-content: center;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: var(--space-6);
-  background: linear-gradient(135deg, #1d61ea 0%, #2067f5 45%, #1754d2 100%);
-  position: relative;
-  overflow: hidden;
+  background: #f8faff;
 }
 
-/* Atmospheric subtle ambient lighting matching Dribbble shot */
-.backdrop::before {
-  content: '';
-  position: absolute;
-  top: -120px;
-  right: -100px;
-  width: 550px;
-  height: 550px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.backdrop::after {
-  content: '';
-  position: absolute;
-  bottom: -150px;
-  left: -100px;
-  width: 650px;
-  height: 650px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(10, 45, 130, 0.4) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-/* ── Floating Shell ────────────────────────────────────── */
+/* ── Full-page Shell ──────────────────────────────────────── */
 .shell {
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   grid-template-rows: 1fr;
   width: 100%;
-  max-width: var(--shell-max-width);
-  height: calc(100vh - var(--space-12));
-  height: calc(100dvh - var(--space-12));
-  max-height: var(--shell-max-height);
+  height: 100vh;
+  height: 100dvh;
   background: white;
-  border-radius: var(--shell-radius);
-  box-shadow: var(--shadow-xl);
   overflow: hidden;
   position: relative;
-  z-index: 1;
 }
 
 /* ── Sidebar ───────────────────────────────────────────── */
@@ -84,7 +52,6 @@
 .sidebar__panel {
   background: #1d61ea;
   border-top-right-radius: 36px;
-  border-bottom-left-radius: var(--shell-radius);
   padding: 24px 20px 32px 20px;
   display: flex;
   flex-direction: column;
@@ -370,12 +337,13 @@
   }
 }
 
+
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
     height: auto;
-    max-height: none;
-    border-radius: var(--radius-lg);
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   .sidebar {
@@ -391,10 +359,6 @@
 
   .sidebar__footer {
     display: none;
-  }
-
-  .backdrop {
-    padding: var(--space-3);
   }
 
   .cards-row {

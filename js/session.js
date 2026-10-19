@@ -8,6 +8,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { fetchCourses, startSession, endSession, fetchSessionState } from './api.js';
+import { exportToSheets } from './sheets.js';
 
 /* ── State ─────────────────────────────────────────────── */
 let _sessionActive  = false;
@@ -180,8 +181,7 @@ export async function initSessionControl(onSessionChange) {
   }
 }
 
-/* Apps Script exporter URL — the slim exporter web app */
-const EXPORTER_URL = 'https://script.google.com/macros/s/AKfycbwnAFO1gkvkha40dVdUgmlx1t8IYwJwpqgUEPrfWokX8dShUGf_5i0UqBx9Inw7DeV5nQ/exec';
+
 
 /**
  * Show export progress in the summary modal.
@@ -236,11 +236,11 @@ async function _runExport(summary) {
 }
 
 /**
- * POST the session summary JSON to the slim Apps Script exporter.
- * The exporter writes one tab in the "Kuwago Reports" spreadsheet.
+ * Write the session summary directly to the professor's Google Sheets
+ * using their own OAuth token. No Apps Script required.
  *
  * @param {Object} summary — from buildSessionSummary()
- * @returns {Promise<{ ok?: boolean, sheetName?: string, url?: string, error?: string, opaque?: boolean }>}
+ * @returns {Promise<{ ok?: boolean, sheetName?: string, url?: string, error?: string }>}
  */
 async function _exportSessionReport(summary) {
   const payload = {
@@ -259,19 +259,7 @@ async function _exportSessionReport(summary) {
     }))
   };
 
-  const res = await fetch(EXPORTER_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body:    JSON.stringify({ action: 'exportSessionSummary', summary: payload })
-  });
-
-  if (!res.ok) throw new Error(`Exporter HTTP ${res.status}`);
-
-  try {
-    return await res.json();
-  } catch {
-    return { opaque: true };
-  }
+  return exportToSheets(payload);
 }
 
 /* ── Session State Queries ─────────────────────────────── */
