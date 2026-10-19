@@ -178,8 +178,12 @@ function _updateAuthUI(user) {
  */
 export function sanitizeName(name) {
   return String(name)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')     /* strip diacritics: ñ → n */
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '');
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .sort()                                /* order-insensitive: "Last, First" == "First Last" */
+    .join('_');
 }

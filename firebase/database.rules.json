@@ -14,7 +14,8 @@
 
       "classSessions": {
         "$sessionId": {
-          ".read": "auth != null",
+          ".read":  "auth != null",
+          ".write": "auth != null && auth.token.email_verified == true",
 
           "attendance": {
             "$studentKey": {

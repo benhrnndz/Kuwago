@@ -77,10 +77,14 @@ async function getAuthToken() {
  */
 function sanitizeName(name) {
   return String(name)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '');
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .sort()
+    .join('_');
 }
 
 /* ── RTDB REST Helpers ─────────────────────────────────── */
