@@ -291,17 +291,39 @@ async function handleNameDetected(tabId, name) {
   const tabData = _activeMeetTabs.get(tabId);
   if (!tabData) return;
 
-  if (tabData.studentName === name) return;  /* No change */
+  if (tabData.studentName === name && tabData.sessionId) return;  /* Already recorded */
 
   tabData.studentName = name;
+  _activeMeetTabs.set(tabId, tabData);
 
-  /* Discover active session */
-  const sessionId = _activeSessionId || await getActiveSessionId();
-  if (!sessionId) {
-    console.log('[bg] No active session — join event not written for:', name);
-    _activeMeetTabs.set(tabId, tabData);
+  await writeJoinForTab(tabId);
+}
+
+/**
+ * Write the attendance join record for a tab into the current active
+ * session. No-op if there is no active session — the prompt poll loop
+ * retries this, so joining Meet before "Start Class" is still recorded.
+ */
+async function writeJoinForTab(tabId) {
+  const tabData = _activeMeetTabs.get(tabId);
+  if (!tabData || !tabData.studentName) return;
+  const name = tabData.studentName;
+
+  /* Always fetch fresh — a cached ID could belong to an ended session */
+  const sessionData = await rtdbGet('kuwago/activeSession');
+  if (!sessionData || !sessionData.active || !sessionData.sessionId) {
+    _activeSessionId = null;
+    _activeSectionId = null;
+    tabData.sessionId = null;
+    console.log('[bg] No active session — join pending for:', name);
     return;
   }
+
+  const sessionId = sessionData.sessionId;
+  _activeSessionId = sessionId;
+  _activeSectionId = sessionData.sectionId || null;
+
+  if (tabData.sessionId === sessionId) return;  /* Already written */
 
   const sKey = sanitizeName(name);
   const now  = new Date().toISOString();
@@ -309,12 +331,10 @@ async function handleNameDetected(tabId, name) {
   console.log('[bg] Writing join for:', name, '→', sKey);
 
   /* Determine attendance status based on session start time */
-  const sessionData = await rtdbGet('kuwago/activeSession');
   let status = 'Present';
-  if (sessionData && sessionData.startedAt) {
+  if (sessionData.startedAt) {
     const startMs = new Date(sessionData.startedAt).getTime();
-    const joinMs  = Date.now();
-    status = (joinMs <= startMs + 10 * 60 * 1000) ? 'Present' : 'Late';
+    status = (Date.now() <= startMs + 10 * 60 * 1000) ? 'Present' : 'Late';
   }
 
   await rtdbPut(
@@ -447,9 +467,18 @@ function startPromptPolling() {
   getActiveSessionId();
 
   async function pollPrompt() {
-    /* Refresh session ID each poll cycle */
-    const sessionId = _activeSessionId || await getActiveSessionId();
-    if (!sessionId) return;
+    /* Refresh session ID each poll cycle (never trust a cached one) */
+    const sessionId = await getActiveSessionId();
+
+    /* Record joins for tabs that were open before the class started */
+    for (const [tabId, tabData] of _activeMeetTabs) {
+      if (tabData.studentName && tabData.sessionId !== sessionId) {
+        if (sessionId) writeJoinForTab(tabId);
+        else tabData.sessionId = null;
+      }
+    }
+
+    if (!sessionId) { _clearActivePrompt(); clearPromptAlerts(); return; }
 
     try {
       const prompts = await rtdbGet(`kuwago/classSessions/${sessionId}/prompts`);

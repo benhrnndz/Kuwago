@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /* Connection status */
-    const isConfigured = status.apiBase && status.apiBase !== 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+    const isConfigured = !!status.rtdbBase;
 
     if (isConfigured) {
       setConnectionBadge(badgeEl, badgeLbl, 'connected', 'Connected');
