@@ -1,6 +1,6 @@
 # Kuwago Documentation Portal
 
-Welcome to the comprehensive technical documentation for **Kuwago v2.0.0** — real-time classroom engagement, attendance tracking, and focus telemetry for Google Meet.
+Welcome to the comprehensive technical documentation for **Kuwago v3.0.0** — real-time classroom engagement, attendance tracking, and focus telemetry for Google Meet.
 
 ---
 
@@ -8,11 +8,11 @@ Welcome to the comprehensive technical documentation for **Kuwago v2.0.0** — r
 
 | Guide | Description | Target Audience |
 |---|---|---|
-| 📐 **[System Architecture](architecture.md)** | Full architectural overview, component breakdowns, Mermaid sequence flows, and Google Sheets entity schemas. | Architects & Developers |
-| 🚀 **[Setup Guide](setup-guide.md)** | Step-by-step walkthrough for deploying Google Sheets, Apps Script, Chrome Extension, and the Professor Dashboard. | Professors & System Admins |
-| 📡 **[API Reference](api-reference.md)** | Exhaustive request/response specifications for all 13 REST-like actions across GET and POST interfaces. | Frontend & Backend Engineers |
-| 📊 **[Google Apps Script & Database](apps-script.md)** | Backend router implementation, sheet schemas, `setupSheets()` automation, and maintenance guides. | Backend Developers |
-| 🧩 **[Chrome Extension](chrome-extension.md)** | Deep dive into Manifest V3 event debouncing, DOM name scraping, chat observers, and the 15-second heartbeat loop. | Client Engineers |
+| 📐 **[System Architecture](architecture.md)** | Full architectural overview, component breakdowns, Mermaid sequence flows, Firebase Realtime Database structures, and direct Sheets export flows. | Architects & Developers |
+| 🚀 **[Setup Guide](setup-guide.md)** | Step-by-step walkthrough for configuring Firebase (Auth, RTDB), enabling Google Cloud APIs, database seeding, Chrome Extension, and Vercel/local deployment. | Professors & System Admins |
+| 📡 **[API Reference](api-reference.md)** | Exhaustive specifications for RTDB data schemas, client-side mutations, mock simulation engine, and legacy Apps Script reference. | Frontend & Backend Engineers |
+| 📊 **[Google Sheets & Apps Script Reference](apps-script.md)** | Reference documentation covering the Sheets report schema, column layouts, and historical Apps Script exporter mechanics. | Backend Developers |
+| 🧩 **[Chrome Extension](chrome-extension.md)** | Deep dive into Manifest V3 event debouncing, DOM name scraping, in-meeting prompt HUD (`overlay.js`), pre-join tracking, and the 15-second heartbeat loop. | Client Engineers |
 
 ---
 

@@ -1,6 +1,6 @@
 # Chrome Extension Guide
 
-The `chrome-extension/` directory contains a Manifest V3 browser extension designed to run in each student's browser during a Google Meet session.
+The `chrome-extension/` directory contains a Manifest V3 browser extension designed to run in each student's browser during a Google Meet session, streaming live focus, attendance, and chat participation telemetry directly into the Firebase Realtime Database.
 
 ---
 
@@ -10,9 +10,11 @@ The `chrome-extension/` directory contains a Manifest V3 browser extension desig
 |---|---|
 | **Self-Name Detection** | `content.js` inspects Google Meet's DOM participant elements with fallback selector heuristics. |
 | **Tab & Window Focus Tracking** | `background.js` combines `chrome.tabs.onActivated` and `chrome.windows.onFocusChanged` with a 1.5-second debounce. |
-| **Health Heartbeats** | Periodic 15-second beacon (`POST ?action=heartbeat`) reporting extension vitality and version. |
-| **Session Join & Leave** | Content script initialization fires `join`; tab close/navigation fires `leave`. |
-| **Prompt Polling & Interception** | Background worker polls `currentPrompt` every ~7 seconds; `MutationObserver` in `content.js` captures chat messages. |
+| **Direct RTDB REST Logging** | `background.js` writes events directly to Firebase RTDB via HTTPS REST calls (`PUT`/`PATCH`/`POST`). |
+| **In-Meeting Prompt HUD** | `overlay.js` renders a non-intrusive floating countdown banner directly inside the Google Meet viewport during active prompts. |
+| **Pre-Session Join Tracking** | Caches arrival events if a student joins before the professor clicks **Start Class**, syncing immediately upon session start. |
+| **Health Heartbeats** | Periodic 15-second beacon (`PUT /kuwago/heartbeats/{studentKey}.json`) reporting extension vitality and version. |
+| **Order-Insensitive Name Matching** | Normalizes name tokens so `LastName, FirstName` aligns with `FirstName LastName` on the canonical roster. |
 
 ---
 
@@ -21,9 +23,10 @@ The `chrome-extension/` directory contains a Manifest V3 browser extension desig
 ```
 chrome-extension/
 ├── manifest.json       # MV3 permissions, host permissions, and scripts
-├── content.js          # Injected into meet.google.com DOM
-├── background.js       # Background service worker (heartbeats, focus, API)
-├── popup.html          # Toolbar popup UI
+├── content.js          # Injected into meet.google.com DOM (identity detection, chat listener)
+├── overlay.js          # Injected into meet.google.com DOM (prompt HUD banner)
+├── background.js       # Background service worker (heartbeats, focus, RTDB REST client)
+├── popup.html          # Toolbar popup UI (royal blue brand theme with RTDB status badge)
 ├── popup.js            # Toolbar popup logic
 └── icons/              # Extension icon assets (16x16, 48x48, 128x128)
 ```
@@ -43,35 +46,44 @@ To prevent false alarms caused by quick window clicks, Alt-Tab glances, or OS no
 1. **State Aggregation**: The background service worker listens to both `chrome.tabs.onActivated` (tab switches) and `chrome.windows.onFocusChanged` (app/window switches).
 2. **Debounce Buffer**: When focus changes away from the active Google Meet tab, an event is scheduled with a 1,500ms delay.
 3. **Cancellation**: If the student returns to the Meet tab within 1,500ms, the pending `focus_lost` event is cancelled and discarded.
-4. **Dispatch**: If the student remains away, a `focus_lost` event is dispatched to the backend.
+4. **Dispatch**: If the student remains away, a `focus_lost` event is dispatched directly to the Firebase Realtime Database.
+
+---
+
+## In-Meeting Prompt HUD Overlay (`overlay.js`)
+
+When the professor issues a verification prompt from the dashboard:
+1. `background.js` detects the active prompt from RTDB and dispatches a message to `content.js` / `overlay.js`.
+2. `overlay.js` injects a floating glassmorphic banner at the top of the Google Meet viewport displaying:
+   - The required prompt phrase (e.g. `"focus"`).
+   - An animated countdown timer ticking down to expiration.
+   - An instruction to type the phrase in the in-meeting chat.
+3. When the student types the response in Meet chat, the `MutationObserver` in `content.js` captures the text, matches the phrase, pushes the response to RTDB, and closes the overlay banner with a green checkmark confirmation.
+
+---
+
+## Pre-Session Join Tracking
+
+If students arrive early in Google Meet before the professor starts the class session:
+1. `background.js` detects the presence and records the join timestamp in local `chrome.storage`.
+2. As soon as the professor clicks **Start Class**, the session state in RTDB switches to `active: true`.
+3. The extension immediately syncs the cached join timestamp into `kuwago/classSessions/{sessionId}/attendance/{studentKey}`, ensuring students are correctly credited as `Present` rather than being penalized.
 
 ---
 
 ## Heartbeat Health Engine
 
-To differentiate between a student who simply closed their tab and a student whose extension crashed or was disabled:
-- Every 15 seconds, `background.js` pulses a health check to the Apps Script endpoint:
+To differentiate between a student who closed their tab and a student whose extension crashed or was disabled:
+- Every 15 seconds, `background.js` pulses a health check to the Firebase RTDB REST endpoint:
   ```json
+  PUT https://kuwago-d6c14-default-rtdb.asia-southeast1.firebasedatabase.app/kuwago/heartbeats/{studentKey}.json
   {
-    "action": "heartbeat",
-    "studentName": "Juan Dela Cruz",
     "detectedName": "Juan Dela Cruz",
-    "version": "2.0.0"
+    "version": "2.0.0",
+    "timestamp": "2026-10-19T06:00:00.000Z"
   }
   ```
-- The backend writes this to the `Heartbeats` sheet tab (one row per student, continuously overwritten).
-- If the professor dashboard detects no heartbeat from an active student for longer than the alert threshold, a **Disconnected** warning is raised.
-
----
-
-## Google Meet DOM Name Detection
-
-The content script reads the student's name directly from the Google Meet user interface without requiring Google OAuth identity scopes:
-
-1. **Selector Fallbacks**: The script queries participant self-tiles using standard attributes, `data-self-name`, and aria-labels.
-2. **Normalization**: Names are cleaned, stripped of "(You)" or "(Presentation)" suffixes, and trimmed.
-3. **Periodic Validation**: Detection runs on a periodic cycle to accommodate dynamic DOM mutations during Google Meet loading.
-4. **Identity Binding**: If a student's Google account name differs from their enrolled roster name (e.g. `Johnny D.` vs. `Dela Cruz, Juan`), the professor can bind the alias directly from the dashboard using **Resolve Match**.
+- The dashboard listens to `kuwago/heartbeats` in real time. If no heartbeat has been received within the threshold (default: 45s), the student's status is marked as **Disconnected**.
 
 ---
 
@@ -79,11 +91,15 @@ The content script reads the student's name directly from the Google Meet user i
 
 | Permission | Justification |
 |---|---|
-| `activeTab` | Injects content script upon navigating to Google Meet. |
+| `activeTab` | Injects content scripts upon navigating to Google Meet. |
 | `scripting` | Enables programmatic DOM observation on Meet tabs. |
 | `tabs` | Allows background service worker to detect tab switching. |
+| `notifications` | Displays optional Chrome desktop notifications for verification prompts. |
+| `storage` | Persists pre-session join timestamps and local student settings. |
+| `windows` | Monitors window focus transitions to track multi-monitor applications. |
 | `host_permissions: https://meet.google.com/*` | Grants execution rights on all Google Meet rooms. |
-| `host_permissions: https://script.google.com/*` | Authorizes background API calls to Apps Script without CORS preflight restrictions. |
+| `host_permissions: https://kuwago-d6c14-default-rtdb.asia-southeast1.firebasedatabase.app/*` | Authorizes background REST API calls to Firebase RTDB without CORS restrictions. |
+| `host_permissions: https://identitytoolkit.googleapis.com/*` | Enables optional Firebase client auth token refresh. |
 
 *Note: Kuwago strictly adheres to privacy standards. The extension does not record video, microphone streams, or browse history outside `meet.google.com`.*
 
@@ -91,10 +107,10 @@ The content script reads the student's name directly from the Google Meet user i
 
 ## Configuration & Installation
 
-### 1. Configure the API URL
-In `background.js` (line 17), set the `API_BASE` to your deployed Apps Script URL:
+### 1. Database Configuration
+In `background.js`, `RTDB_BASE` points to the production Firebase Realtime Database:
 ```javascript
-const API_BASE = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+const RTDB_BASE = 'https://kuwago-d6c14-default-rtdb.asia-southeast1.firebasedatabase.app';
 ```
 
 ### 2. Install Unpacked Extension
@@ -102,10 +118,11 @@ const API_BASE = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
 2. Enable **Developer mode** (top-right toggle).
 3. Click **Load unpacked** (top-left).
 4. Select the `chrome-extension/` directory.
+5. Click the extension toolbar icon. The popup should display a green **Ready** badge.
 
 ### 3. Reloading After Code Changes
-When you update `background.js` or `content.js`:
+When updating `background.js`, `content.js`, or `overlay.js`:
 1. Return to `chrome://extensions`.
-2. Locate **Kuwago Classroom Monitor**.
+2. Locate **Classroom Activity Monitor**.
 3. Click the **↻ (Reload)** button.
 4. Refresh any active Google Meet tabs.

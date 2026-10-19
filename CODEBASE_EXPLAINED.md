@@ -1,7 +1,7 @@
 # Kuwago Codebase Technical Documentation
 
 > **File:** `CODEBASE_EXPLAINED.md`  
-> **Repository:** `lester27/Kuwago` (Version 2.0.0)  
+> **Repository:** `lester27/Kuwago` (Version 3.0.0)  
 > **Target Audience:** Software engineers onboarding to this codebase who need to understand the concrete technical implementation, request lifecycles, database structures, and runtime mechanics.
 
 ---
@@ -28,25 +28,27 @@ In remote and hybrid university classes using Google Meet, professors face sever
 2. **Identity Mismatch:** Google Meet display names often reflect personal Google accounts (e.g., nicknames, first names only, or inverted name formats) rather than official institutional roster formats (`LastName, FirstName M.I.`), forcing professors to perform manual reconciliation.
 3. **Passive Engagement:** Professors lack low-friction mechanisms to verify live presence during lectures without interrupting discussion flow.
 
-**Kuwago** solves these problems through a distributed architecture composed of three systems:
-- A **Chrome Extension (Manifest V3)** running on student machines that monitors tab focus, detects identity from the Google Meet DOM, listens for chat responses, and pulses health heartbeats.
-- A **Serverless Backend (Google Apps Script)** running on Google Cloud infrastructure backed by a **Google Spreadsheet** acting as a relational tabular database.
-- A **Professor Dashboard (Vanilla ES Modules SPA)** that displays real-time attendance, active alerts (sustained unfocus, missing extension, unanswered prompts), manual attendance override controls, and active prompt dispatchers.
+**Kuwago** solves these problems through a distributed architecture composed of four integrated layers:
+- A **Chrome Extension (Manifest V3)** running on student machines that monitors tab focus, detects identity from the Google Meet DOM, presents in-meeting verification overlays (`overlay.js`), captures chat responses, and streams health heartbeats.
+- A **Realtime Database Backend (Firebase RTDB)** in `asia-southeast1` that powers sub-second reactive state synchronization across WebSockets and receives extension REST writes without API gateways.
+- An **Authentication & Export Engine** utilizing **Firebase Authentication (Google Sign-In)** to secure the dashboard and directly drive the **Google Drive API v3** and **Google Sheets API v4**, generating formatted reports in the professor's own Google Drive ("Kuwago Reports").
+- A **Professor Dashboard (Vanilla ES Modules SPA)** deployed on Vercel (or served locally) displaying real-time attendance, active alerts (sustained unfocus, missing extension, unanswered prompts), manual attendance override controls, and interactive prompt dispatchers.
 
 ### 1.2 Tech Stack & Concrete Versions
 Verified directly from package and configuration manifests:
 
-| Layer | Technology | Version | Purpose |
+| Layer | Technology | Version / Endpoint | Purpose |
 |---|---|---|---|
+| **Hosting & CDN** | Vercel Platform | Zero-config static web app (`vercel.json`) | Production hosting at `kuwago-dashboard.vercel.app` with clean URLs and security headers. |
 | **Local Web Server** | Node.js Runtime | `>= 18.0.0` (from `package.json` engines) | Serves the static dashboard locally via zero-dependency HTTP server (`serve-dashboard.js`). |
-| **Local Dependencies** | None (`package.json`) | N/A | Pure Node.js standard library (`http`, `fs`, `path`, `zlib`). No external NPM packages. |
+| **Admin & Seeding** | Firebase Admin SDK | `^12.7.0` (`package.json` devDependencies) | Automated seeding of sections (`BSIT 3-5`) and student rosters via `scripts/seed-rtdb.js`. |
+| **Realtime Database** | Firebase RTDB | `asia-southeast1` regional instance | Primary live telemetry store (`kuwago-d6c14-default-rtdb.asia-southeast1.firebasedatabase.app`). |
+| **Authentication** | Firebase Auth (Google) | Web Compat SDK v11 | Google OAuth Sign-In gate with Drive and Sheets authorization scopes. |
+| **Report Storage** | Google Drive & Sheets API | Drive v3 & Sheets v4 REST API | Directly creates and updates per-session tabs in the professor's "Kuwago Reports" spreadsheet. |
 | **Frontend Framework** | Vanilla JavaScript | ES2022+ (Native ES Modules) | SPA architecture without React, Vue, or build-step bundlers. |
-| **Frontend Styling** | Vanilla CSS | CSS3 Variables | Design system located in `css/tokens.css`, `css/layout.css`, `css/components.css`, `css/states.css`. |
+| **Frontend Styling** | Vanilla CSS | CSS3 Variables | Design system located in `css/tokens.css`, `css/layout.css`, `css/components.css`, `css/states.css`, `css/login.css`. |
 | **Typography** | Google Fonts | Web Font API | Plus Jakarta Sans (UI text) & JetBrains Mono (timestamps, counters). |
-| **Client Extension** | Chrome Extensions API | Manifest V3 | Service worker (`background.js`) + Content Script (`content.js`). |
-| **Backend API** | Google Apps Script (GAS) | V8 Runtime (`appsscript.json`) | Serverless Web App routing `doGet` and `doPost`. |
-| **Timezone Setting** | Asia/Manila (`appsscript.json`) | IANA Standard | Backend date formatting and session time window math. |
-| **Primary Database** | Google Sheets API | Cloud Spanner / Google Drive | 10 persistent tabular sheets and per-session dynamic archive sheets. |
+| **Client Extension** | Chrome Extensions API | Manifest V3 | Service worker (`background.js`), Content Script (`content.js`), and HUD (`overlay.js`). |
 
 ### 1.3 High-Level System Topology
 
@@ -54,33 +56,42 @@ Verified directly from package and configuration manifests:
 flowchart TB
     subgraph StudentMachine["Student Environment"]
         MeetTab["Google Meet Tab (meet.google.com)"]
+        Overlay["overlay.js (In-Meeting HUD Banner)"]
         ContentScript["content.js (DOM Scraper & Chat Interceptor)"]
         ExtBG["background.js (Manifest V3 Service Worker)"]
-        ExtPopup["popup.html / popup.js (Extension Status Popup)"]
+        ExtPopup["popup.html / popup.js (Status & RTDB Setup Badge)"]
         
+        MeetTab <--> Overlay
         MeetTab <--> ContentScript
         ContentScript <-->|"chrome.runtime.sendMessage"| ExtBG
         ExtPopup <-->|"chrome.runtime.sendMessage"| ExtBG
     end
 
-    subgraph GoogleCloud["Google Cloud Infrastructure"]
-        GAS["Google Apps Script Web App (Code.gs, Engagement.gs, SheetHelpers.gs)"]
-        Spreadsheet[("Google Spreadsheet Database (10 Base Sheets + Export Tabs)")]
+    subgraph FirebaseCloud["Firebase Cloud Infrastructure (kuwago-d6c14)"]
+        FirebaseAuth["Firebase Authentication (Google Sign-In)"]
+        RTDB[("Firebase Realtime Database (RTDB: asia-southeast1)\n• courses • students • heartbeats • aliases\n• classSessions/{sessionId} (attendance, focusEvents, prompts)")]
+        Rules["Security Rules (database.rules.json)"]
         
-        GAS <-->|"SpreadsheetApp API (CRUD)"| Spreadsheet
+        RTDB --- Rules
     end
 
-    subgraph ProfessorMachine["Professor Environment"]
-        NodeServer["serve-dashboard.js (Local HTTP Server: 127.0.0.1:8080)"]
-        BrowserDashboard["Dashboard SPA (index.html, js/app.js, CSS Design System)"]
+    subgraph ProfessorMachine["Professor Dashboard Environment"]
+        LoginGate["login.html (Google Sign-In Gate)"]
+        Dashboard["Dashboard SPA (index.html, js/app.js, js/store.js, CSS)"]
+        SheetsExporter["js/sheets.js (Google Drive v3 & Sheets v4 Exporter)"]
         
-        NodeServer -->|"Serves HTML/JS/CSS"| BrowserDashboard
+        LoginGate -->|"OAuth Success"| Dashboard
+        Dashboard <--> SheetsExporter
     end
 
-    ExtBG -->|"POST logEvent, submitChat, heartbeat (Bypasses CORS via host_permissions)"| GAS
-    ExtBG -->|"GET ?action=currentPrompt (7s Poll)"| GAS
-    BrowserDashboard -->|"GET ?action=dashboardData (5s Poll)"| GAS
-    BrowserDashboard -->|"GET ?action=setPrompt, startSession, endSession, resolveMatch, overrideAttendance"| GAS
+    subgraph GoogleDrive["Professor's Personal Google Workspace"]
+        KuwagoReports[("Google Spreadsheet: 'Kuwago Reports'\n• Tab per Session: Session_YYYY-MM-DD_SectionID\n• Metadata, Metric Cards, Attendance Roster")]
+    end
+
+    ExtBG -->|"HTTPS REST: PUT / PATCH telemetry"| RTDB
+    Dashboard <-->|"Real-Time WebSocket Sync (Firebase SDK)"| RTDB
+    LoginGate <-->|"Sign-In with Popup (Scopes: drive.file, spreadsheets)"| FirebaseAuth
+    SheetsExporter -->|"Direct OAuth Bearer Requests (Create & Append)"| KuwagoReports
 ```
 
 ---
@@ -91,76 +102,74 @@ flowchart TB
 Professor Dashboard/
 ├── .agents/                               # Antigravity agent configuration and custom skills
 ├── .gemini/                               # IDE and agent customization data
-├── apps-script/                           # Google Apps Script backend source files
-│   ├── appsscript.json                    # Apps Script manifest (V8 runtime, Asia/Manila timezone, permissions)
-│   ├── Code.gs                            # Primary backend controller (doGet, doPost, route handlers, session summary)
-│   ├── Engagement.gs                      # Business logic & risk engine (focus lapses, participation, active alerts)
-│   ├── Index.html                         # Legacy GAS HTML template for direct Web App UI access
-│   ├── JavaScript.html                    # Legacy client-side JavaScript for GAS HTML template (google.script.run)
-│   ├── SheetHelpers.gs                    # Spreadsheet CRUD layer, name normalization, string similarity algorithms
-│   └── Styles.html                        # Legacy CSS bundle for GAS HTML template
+├── firebase/                              # Firebase configuration and rules
+│   └── database.rules.json                # RTDB security rules (scoped reads/writes)
+├── scripts/                               # Administrative and database management scripts
+│   ├── seed-rtdb.js                       # Node.js script seeding courses and student rosters
+│   └── serviceAccountKey.json             # Firebase service account credentials (git-ignored)
 ├── chrome-extension/                      # Student Chrome Extension (Manifest V3)
 │   ├── icons/                             # Extension icons in 16x16, 48x48, 128x128 PNG and SVG formats
-│   │   ├── gen_icons.js                   # Node.js script generating raw PNG binaries from mathematical canvas loops
-│   │   ├── icon16.png                     # Generated 16x16 toolbar icon
-│   │   ├── icon16.svg                     # Vector source icon (16px)
-│   │   ├── icon48.png                     # Generated 48x48 extensions manager icon
-│   │   ├── icon48.svg                     # Vector source icon (48px)
-│   │   ├── icon128.png                    # Generated 128x128 Chrome Web Store icon
-│   │   └── icon128.svg                    # Vector source icon (128px)
-│   ├── background.js                      # Service worker: focus listener, tab lifecycle, prompt polling, API client
-│   ├── content.js                         # Content script: DOM identity detection, chat listener, keepalive pings
+│   ├── background.js                      # Service worker: focus listener, tab lifecycle, RTDB REST client
+│   ├── content.js                         # Content script: DOM identity detection, chat listener, keepalive
+│   ├── overlay.js                         # In-meeting HUD prompt banner injected into Google Meet
 │   ├── manifest.json                      # Extension Manifest V3 configuration, permissions, host rules
-│   ├── popup.html                         # Extension popup interface markup and styles
+│   ├── popup.html                         # Extension popup interface markup and styles (royal blue theme)
 │   └── popup.js                           # Extension popup logic (queries background worker for live status)
 ├── css/                                   # Standalone Dashboard CSS design system
 │   ├── components.css                     # Cards, data tables, buttons, badges, modals, form controls
 │   ├── layout.css                         # Application shell, sidebar, topbar, grid layout, responsive breakpoints
 │   ├── states.css                         # Loading skeletons, status colors, urgent countdown animations, transitions
-│   └── tokens.css                         # Design tokens: palette, typography scale, spacing, border radii, shadows
+│   ├── tokens.css                         # Design tokens: palette, typography scale, spacing, border radii, shadows
+│   └── login.css                          # Dedicated styles for Google Sign-In login portal
 ├── docs/                                  # Project technical documentation and guides
-│   ├── api-reference.md                   # HTTP endpoint contract documentation
-│   ├── apps-script.md                     # Backend deployment and Apps Script setup instructions
+│   ├── api-reference.md                   # HTTP and RTDB data contract documentation
+│   ├── apps-script.md                     # Reference documentation on legacy Apps Script export
 │   ├── architecture.md                    # System architecture, data flow diagrams, database schemas
 │   ├── chrome-extension.md                # Chrome extension technical design and DOM scraper reference
 │   ├── README.md                          # Documentation index
 │   └── setup-guide.md                     # Comprehensive step-by-step setup walkthrough
 ├── js/                                    # Standalone Dashboard client application (ES Modules)
-│   ├── api.js                             # API wrapper handling network requests, timeouts, and fallback state
-│   ├── app.js                             # Application bootstrapper: polling loop, navigation, sort/filter bindings
+│   ├── app.js                             # Application bootstrapper: auth guard, store binding, event routing
+│   ├── login.js                           # Google Sign-In authentication handler and token persistence
+│   ├── firebase.js                        # Firebase SDK initialization, Auth state, RTDB refs, token manager
+│   ├── store.js                           # Real-time RTDB listener coordinator and client-side reactive store
+│   ├── api.js                             # Data operations layer (RTDB mutations, mock mode fallbacks)
+│   ├── sheets.js                          # Direct Google Drive v3 & Google Sheets v4 API exporter
+│   ├── session.js                         # Class session lifecycle manager (course selection, start/end timer)
+│   ├── engagement.js                      # Client-side focus lapse analytics & student detail metric math
 │   ├── attendance.js                      # Attendance override modal and unmatched-name resolution controller
 │   ├── mock.js                            # Comprehensive offline simulation engine for UI development (?mock=true)
 │   ├── prompt.js                          # Prompt issuance modal, input validation, and submission logic
 │   ├── render.js                          # Pure DOM renderer for summary cards, tables, badges, and modals
-│   ├── respondents.js                     # Prompt respondents checklist modal logic
-│   └── session.js                         # Class session lifecycle manager (course selection, start/end timer)
+│   └── respondents.js                     # Prompt respondents checklist modal logic
 ├── spec/                                  # Specifications and design addenda
-│   ├── backend-dashboard-restructure.md   # Spec for trimmed Priority Roster payload and studentDetail endpoint
-│   ├── backend-spec-addendum.md           # Spec for Phase 2: courses, heartbeats, session summaries, name aliases
-│   ├── backend-spec.md                    # Core backend specification
-│   ├── frontend-dashboard-restructure.md  # Spec for UI restructure (Priority Roster + lazy Student Detail modal)
-│   ├── frontend-spec-addendum.md          # Spec for frontend additions (session control, health table, override modal)
-│   └── frontend-spec.md                   # Core frontend specification
 ├── CHANGELOG.md                           # Version history and release notes
 ├── CODEBASE_EXPLAINED.md                  # This master technical onboarding document
 ├── CONTRIBUTING.md                        # Guidelines for development, code standards, and PR workflows
 ├── index.html                             # Primary entry point for the standalone Professor Dashboard SPA
-├── package.json                           # Node.js project manifest (scripts and engines)
+├── login.html                             # Dedicated Google Sign-In login gateway
+├── package.json                           # Node.js project manifest (scripts, engines, devDependencies)
 ├── README.md                              # Repository overview and quick start guide
 ├── serve-dashboard.js                     # Node.js static file server (http://127.0.0.1:8080)
-└── skills-lock.json                       # Lockfile for agent customization dependencies
+├── skills-lock.json                       # Lockfile for agent customization dependencies
+└── vercel.json                            # Vercel deployment and routing configuration
 ```
 
 ### 2.1 File Purposes & Entry Points
 
 | File / Folder | Type | One-Line Purpose |
 |---|---|---|
+| `login.html` / `js/login.js` | **Entry Point (Auth)** | Google OAuth Sign-In gate capturing session credentials and Google API access tokens. |
+| `index.html` / `js/app.js` | **Entry Point (Dashboard UI)** | Protected dashboard SPA; bootstraps auth guard, attaches RTDB listeners, and renders control views. |
+| `js/store.js` | **Data Store** | Establishes WebSocket subscriptions to Firebase RTDB and triggers UI updates upon state changes. |
+| `js/sheets.js` | **Exporter Engine** | Directly interacts with Google Drive and Sheets APIs using the professor's bearer token. |
 | `serve-dashboard.js` | **Entry Point (Server)** | Zero-dependency Node.js HTTP server hosting the dashboard on port 8080 with path-traversal security. |
-| `index.html` | **Entry Point (Dashboard UI)** | Main HTML document loading the modular CSS design system and bootstrapping `js/app.js`. |
-| `js/app.js` | **Entry Point (Client Logic)** | Initializes all UI subsystems, binds DOM events, and runs the 5-second polling loop. |
-| `apps-script/Code.gs` | **Entry Point (Backend API)** | Routes incoming HTTP `doGet` and `doPost` requests, handles CORS workarounds, and coordinates business handlers. |
-| `chrome-extension/manifest.json` | **Entry Point (Extension)** | Declares permissions, background service worker, content script injection, and host patterns. |
-| `chrome-extension/background.js` | **Entry Point (Worker)** | MV3 service worker tracking tab activation, window focus, prompt polling, and event dispatching. |
+| `scripts/seed-rtdb.js` | **Database Utility** | Node.js script using Firebase Admin to seed courses and student rosters. |
+| `chrome-extension/manifest.json` | **Entry Point (Extension)** | Declares MV3 permissions, background service worker, content scripts, and host patterns. |
+| `chrome-extension/background.js` | **Entry Point (Worker)** | MV3 service worker tracking tab activation, window focus, prompt polling, and RTDB REST logging. |
+| `chrome-extension/content.js` | **Entry Point (Page Script)** | Injected into `meet.google.com`; scrapes self-identity, intercepts chat submissions, and manages presence. |
+| `chrome-extension/overlay.js` | **Extension HUD** | Displays an on-screen prompt countdown banner directly inside the Google Meet viewport. |
+| `chrome-extension/popup.html` | Extension UI | Status window displaying the student's connection state and live RTDB readiness indicator. |tension/background.js` | **Entry Point (Worker)** | MV3 service worker tracking tab activation, window focus, prompt polling, and event dispatching. |
 | `chrome-extension/content.js` | **Entry Point (Page Script)** | Injected into `meet.google.com`; scrapes self-identity, intercepts chat submissions, and tracks document visibility. |
 | `chrome-extension/popup.html` | Extension UI | Small status window displayed when the user clicks the browser action icon. |
 | `apps-script/Engagement.gs` | Logic Engine | Recomputes student live statuses, focus lapse counts, participation percentages, and active alerts. |

@@ -2,14 +2,14 @@
 
 ## Overview
 
-**Kuwago** is a distributed classroom engagement and attendance monitoring system for Google Meet. It operates across three decoupled layers:
+**Kuwago v3.0.0** is a distributed classroom engagement and attendance monitoring system for Google Meet. It operates across four decoupled layers:
 
 | Layer | Host Environment | Core Responsibility |
 |---|---|---|
-| **Chrome Extension** | Student Chrome Browser (Manifest V3) | Captures tab/window focus, Meet display name, chat responses, and sends periodic health heartbeats. |
-| **Apps Script Backend** | Google Cloud (Apps Script Web App) | Central API router, business logic (attendance, focus lapses, participation, alerts), and Google Sheets ORM. |
-| **Professor Dashboard** | Professor Desktop / Browser | Zero-build Vanilla ES Modules SPA displaying the live Priority Roster, prompt dispatcher, and session controls. |
-| **Storage Engine** | Google Sheets | Tabular database storing reference rosters, real-time telemetry, prompts, and compiled per-session reports. |
+| **Chrome Extension** | Student Chrome Browser (Manifest V3) | Captures tab/window focus, Meet display name, chat responses, presents in-meeting HUD overlay (`overlay.js`), buffers pre-session joins, and sends periodic health heartbeats. Logs telemetry directly to RTDB via REST. |
+| **Realtime Database** | Firebase Realtime Database (`asia-southeast1`) | Central live database powering sub-second WebSocket reactive sync to the dashboard and receiving REST telemetry from student extensions. |
+| **Authentication & Export Engine** | Firebase Auth & Google Cloud REST APIs | Authenticates professors via Google OAuth with Drive & Sheets scopes (`drive.file`, `spreadsheets`). Directly creates and formats reports in the professor's Google Drive ("Kuwago Reports") without intermediary serverless proxies. |
+| **Professor Dashboard** | Vercel Platform / Local Node.js | Full-viewport Vanilla ES Modules SPA displaying the live Priority Roster, prompt dispatcher, session controls, and student drill-down modals. |
 
 ---
 
@@ -21,199 +21,184 @@
 sequenceDiagram
     autonumber
     actor Prof as Professor (Dashboard)
-    participant API as Google Apps Script API
-    participant DB as Google Sheets
+    participant Auth as Firebase Auth (Google)
+    participant RTDB as Firebase Realtime Database
     actor Stud as Student Browser (Meet Ext)
+    participant Drive as Google Drive & Sheets API
 
-    Note over Prof,API: Phase 1 — Pre-Class Setup
-    Prof->>API: GET ?action=getCourses
-    API->>DB: Read Courses sheet
-    DB-->>API: [ { SectionID: "BSIT301-A", ... } ]
-    API-->>Prof: Course options list
+    Note over Prof,Auth: Phase 1 — Authentication & Authorization
+    Prof->>Auth: Google Sign-In with Popup (Scopes: drive.file, spreadsheets)
+    Auth-->>Prof: User credentials + OAuth access token (stored in sessionStorage)
 
-    Note over Prof,DB: Phase 2 — Session Activation
-    Prof->>API: POST startSession { sectionId: "BSIT301-A" }
-    API->>DB: Create ActiveSession, snapshot Section roster
-    API-->>Prof: { success: true, sessionId: "sess-..." }
+    Note over Prof,RTDB: Phase 2 — Real-Time Connection & Session Activation
+    Prof->>RTDB: Attach WebSocket listeners (courses, students, heartbeats, active session)
+    RTDB-->>Prof: Initial data snapshot (sections e.g. BSIT 3-5, rosters)
+    Prof->>RTDB: Write kuwago/classSessions/{sessionId} { active: true, sectionId, startedAt }
+    RTDB-->>Prof: Session activated; start local duration ticker
 
-    Note over Stud,API: Phase 3 — Student Telemetry & Extension Beacons
-    Stud->>API: POST heartbeat { studentName, version } (every 15s)
-    API->>DB: Upsert row in Heartbeats table
-    Stud->>API: POST logEvent { type: "join", sessionId }
-    API->>DB: Append row to Sessions
-
-    loop During Active Class (every 5 seconds)
-        Prof->>API: GET dashboardData (lightweight priority payload)
-        API->>DB: Read telemetry & compute alerts/attendance
-        API-->>Prof: { students: [ { name, liveStatus, attendanceStatus, activeAlerts } ] }
+    Note over Stud,RTDB: Phase 3 — Student Telemetry & Extension Beacons
+    Stud->>RTDB: POST kuwago/heartbeats/{studentKey} (every 15s)
+    Stud->>RTDB: PUT kuwago/classSessions/{sessionId}/attendance/{studentKey} { joinedAt }
+    
+    loop Real-Time Telemetry (Sub-Second WebSocket Push)
+        RTDB-->>Prof: Instant push on attendance or heartbeat changes
         
         opt Focus Departure
-            Stud->>API: POST logEvent { type: "focus_lost" }
-            API->>DB: Append to FocusEvents
+            Stud->>RTDB: POST kuwago/classSessions/{sessionId}/focusEvents { type: "lost" }
+            RTDB-->>Prof: Real-time alert raised on dashboard (sustained unfocus)
         end
 
         opt Student Detail Drill-down
-            Prof->>API: GET studentDetail { sessionId, studentName }
-            API-->>Prof: Full focus lapse log, prompts, extension health
+            Prof->>Prof: Compute drill-down detail instantly from local RTDB store snapshot
         end
     end
 
     Note over Prof,Stud: Phase 4 — Interactive Verification Prompt
-    Prof->>API: POST setPrompt { phrase: "matrix", durationSeconds: 60 }
-    API->>DB: Insert ChatPrompts row
-    Stud->>API: GET currentPrompt (polled every 7s)
-    API-->>Stud: { active: true, phrase: "matrix" }
-    Stud->>API: POST submitChat { phrase: "matrix" }
-    API->>DB: Insert ChatResponses row (evaluates match)
+    Prof->>RTDB: Write kuwago/classSessions/{sessionId}/prompts/{promptId} { phrase, expiresAt }
+    RTDB-->>Stud: Extension detects active prompt via RTDB listener/poll
+    Stud->>Stud: Injects in-meeting HUD overlay banner (overlay.js) with countdown
+    Stud->>RTDB: POST response upon detecting student chat matching phrase
+    RTDB-->>Prof: Instant real-time increment on respondents tally
 
-    Note over Prof,DB: Phase 5 — Class Termination & Auto-Export
-    Prof->>API: POST endSession { sessionId }
-    API->>DB: Close open sessions, calculate final metrics
-    API->>DB: Create new tab: Session_YYYY-MM-DD_BSIT301-A
-    API-->>Prof: { success: true, summary: { present: 28, late: 2, absent: 2 } }
-    Prof-->>Prof: Display Session Summary Modal
+    Note over Prof,Drive: Phase 5 — Class Termination & Direct Sheets Export
+    Prof->>RTDB: Update session { active: false, endedAt }
+    Prof->>Drive: Search or Create "Kuwago Reports" spreadsheet (Drive API v3)
+    Drive-->>Prof: Return Spreadsheet ID
+    Prof->>Drive: Add formatted tab Session_YYYY-MM-DD_SectionID (Sheets API v4)
+    Drive-->>Prof: Success response with sheet URL
+    Prof-->>Prof: Display End Class Summary Modal with direct "Open sheet ↗" link
 ```
 
 ---
 
 ## Component Architecture
 
-### 1. Professor Dashboard (`index.html`, `js/`, `css/`)
+### 1. Professor Dashboard (`index.html`, `login.html`, `js/`, `css/`)
 
 A client-side Single Page Application engineered with zero third-party framework dependencies.
 
-- **`js/app.js`**: Application bootstrapper. Orchestrates the 5-second polling loop, tab switching, and binds navigation controls.
-- **`js/session.js`**: Controls class lifecycle. Manages course selection, triggers `startSession` and `endSession`, runs the live session duration timer, and opens the session summary report.
+- **`login.html` & `js/login.js`**: Google OAuth login gateway. Handles popup sign-in, persists the Google OAuth access token into `sessionStorage`, and redirects to the dashboard.
+- **`js/app.js`**: Application bootstrapper. Implements auth guard, attaches store listeners, binds navigation controls, and routes sorting/filtering.
+- **`js/firebase.js`**: Firebase Web SDK initialization, Auth state tracking, RTDB reference builders, name sanitization, and access token TTL manager.
+- **`js/store.js`**: Real-time state coordinator. Establishes RTDB subscriptions (`onValue`) for active session, attendance, focus events, prompts, and heartbeats, keeping in-memory state fresh.
+- **`js/sheets.js`**: Direct Google Drive v3 and Google Sheets v4 API exporter. Creates the "Kuwago Reports" spreadsheet in the professor's own Google Drive, writes session metadata cards, and formats the student roster.
+- **`js/session.js`**: Controls class lifecycle. Manages course selection, triggers session start/end, runs the live session duration timer, and opens the session summary report.
+- **`js/engagement.js`**: Client-side analytics engine. Computes focus lapse counts, cumulative away duration, active alerts, and student detail summaries directly from store snapshots.
 - **`js/attendance.js`**: Handles manual professor attendance overrides (`overrideAttendance`) and alias binding (`resolveMatch`) for students whose Meet display names do not match the roster.
 - **`js/render.js`**: Ultra-fast DOM renderer. Paints the Priority Roster, student alert indicators, attendance status badges, active prompt counters, and renders the lazy-loaded Student Detail modal.
 - **`js/prompt.js` & `js/respondents.js`**: Prompt issuance modal, countdown timer ticker, and live respondents checklist.
-- **`js/api.js`**: Fetch wrapper featuring configurable request timeouts, automatic error recovery, and last-known-good state preservation.
 - **`js/mock.js`**: Offline sandbox engine. Enabled via `?mock=true`, simulating every backend endpoint, telemetry jitter, and edge cases without external connections.
 
 ### 2. Chrome Extension (`chrome-extension/`)
 
 A Manifest V3 extension operating strictly within student browser sessions on `meet.google.com`.
 
-- **`manifest.json`**: Configured with `activeTab`, `scripting`, `tabs`, and `host_permissions` for Google Meet and the Apps Script endpoint.
+- **`manifest.json`**: Configured with `activeTab`, `scripting`, `tabs`, and `host_permissions` for Google Meet, Firebase RTDB, and Google Identity.
 - **`content.js`**:
   - Automatically identifies the student's own display name from Google Meet's participant tile DOM using multi-tiered CSS selector fallbacks.
   - Monitors the in-meeting chat box using a `MutationObserver` to capture outgoing text and verify prompt compliance.
-  - Dispatches visual in-page prompt notifications when the professor issues a verification phrase.
+- **`overlay.js`**:
+  - Injects a sleek in-meeting floating prompt banner into Google Meet when a verification prompt is active, displaying the required phrase and countdown.
 - **`background.js`**:
   - Combines `chrome.tabs.onActivated` and `chrome.windows.onFocusChanged` with a 1,500ms debounce buffer to reliably distinguish brief window flicks from genuine sustained departures.
-  - Fires heartbeat pulses every 15 seconds to report extension connectivity and version health.
+  - Fires heartbeat pulses every 15 seconds directly to the Firebase RTDB REST API.
+  - Records student join events even before the professor hits "Start Class", syncing immediately upon session start.
   - Automatically detects when a student closes or navigates away from the Google Meet tab to log leave timestamps.
-
-### 3. Google Apps Script Backend (`apps-script/`)
-
-The serverless API engine executing on Google infrastructure.
-
-- **`Code.gs`**: Central `doGet` and `doPost` router. Dispatches endpoints for session lifecycle, roster aggregation, prompt handling, and compiles the post-session consolidated spreadsheet tab.
-- **`SheetHelpers.gs`**: Data layer abstractions. Implements CRUD operations, name normalization, and includes `setupSheets()` for one-click database initialization.
-- **`Engagement.gs`**: Analytical computing core. Computes focus lapses, evaluates sustained unfocus alerts, scores participation rates, and determines attendance states.
+- **`popup.html` / `popup.js`**:
+  - Extension status window styled in royal blue with an instant RTDB readiness badge.
 
 ---
 
-## Google Sheets Database Schema
+## Firebase Realtime Database Schema
 
-Google Sheets acts as a relational-style datastore comprising seven standard tables plus dynamic per-session export tabs.
+Data is organized under the root `kuwago/` namespace:
 
-### 1. `Courses`
-Reference table for academic sections.
-| Column | Type | Description |
-|---|---|---|
-| `SectionID` | string | Primary key (e.g. `BSIT301-A`) |
-| `CourseName` | string | Full subject title (e.g. `IT Capstone Project`) |
-| `SectionName` | string | Section descriptor (e.g. `Section A`) |
-
-### 2. `Students`
-Official roster table. Lookups are scoped by `SectionID`.
-| Column | Type | Description |
-|---|---|---|
-| `StudentName` | string | Canonical student name (`LastName, FirstName, M.I.`) |
-| `SectionID` | string | Foreign key referencing `Courses.SectionID` |
-
-### 3. `Sessions`
-Log of student presence per class session.
-| Column | Type | Description |
-|---|---|---|
-| `SessionID` | string | Unique session identifier |
-| `StudentName` | string | Normalized student name |
-| `Matched` | boolean | `TRUE` if matched to canonical roster, `FALSE` for raw Meet names |
-| `JoinTime` | ISO datetime | First arrival timestamp |
-| `LeaveTime` | ISO datetime | Departure timestamp (or session close timestamp) |
-
-### 4. `FocusEvents`
-Audit trail of window and tab focus transitions.
-| Column | Type | Description |
-|---|---|---|
-| `EventID` | string | Unique event identifier |
-| `StudentName` | string | Student display name |
-| `SessionID` | string | FK referencing `Sessions.SessionID` |
-| `Type` | string | `lost` (away from Meet) or `regained` (returned to Meet) |
-| `Timestamp` | ISO datetime | Exact timestamp of focus transition |
-
-### 5. `ChatPrompts`
-History of interactive verification prompts broadcast by the professor.
-| Column | Type | Description |
-|---|---|---|
-| `PromptID` | string | Unique prompt identifier |
-| `ExpectedPhrase`| string | Normalized case-insensitive phrase |
-| `IssuedAt` | ISO datetime | Broadcast timestamp |
-| `ExpiresAt` | ISO datetime | Deadline timestamp |
-| `IsActive` | boolean | `TRUE` if prompt is currently accepting answers |
-
-### 6. `ChatResponses`
-Incoming student chat submissions evaluated against prompts.
-| Column | Type | Description |
-|---|---|---|
-| `ResponseID` | string | Unique response identifier |
-| `StudentName` | string | Submitting student name |
-| `PromptID` | string | FK referencing `ChatPrompts.PromptID` |
-| `SubmittedText` | string | Raw text entered by student in Meet chat |
-| `Matched` | boolean | Whether submitted text met prompt criteria |
-| `Timestamp` | ISO datetime | Submission timestamp |
-
-### 7. `Heartbeats`
-Latest-only health beacon table (one row per student, continuously overwritten).
-| Column | Type | Description |
-|---|---|---|
-| `StudentName` | string | Primary key (student name) |
-| `DetectedName` | string | Raw name detected in Meet DOM |
-| `ExtensionVersion` | string | Client version (e.g. `2.0.0`) |
-| `Timestamp` | ISO datetime | Timestamp of most recent heartbeat |
+```
+kuwago/
+├── courses/
+│   └── {sectionId}/                  # e.g. "BSIT 3-5"
+│       ├── courseName: string        # e.g. "System Integration and Architecture"
+│       └── sectionName: string       # e.g. "BSIT 3-5"
+├── students/
+│   └── {sectionId}/
+│       └── {studentKey}/             # Sanitized student name key
+│           ├── name: string          # Full canonical name
+│           └── sectionId: string
+├── aliases/
+│   └── {aliasKey}/                   # Sanitized detected Meet name
+│       ├── canonical: string         # Mapped roster name (or null)
+│       └── dismissed: boolean
+├── heartbeats/
+│   └── {studentKey}/                 # Latest heartbeat per student
+│       ├── detectedName: string
+│       ├── version: string
+│       └── timestamp: ISO string
+└── classSessions/
+    └── {sessionId}/                  # e.g. "session_1729318800000"
+        ├── active: boolean
+        ├── sectionId: string
+        ├── startedAt: ISO string
+        ├── endedAt: ISO string
+        ├── attendance/
+        │   └── {studentKey}/
+        │       ├── name: string
+        │       ├── joinedAt: ISO string
+        │       ├── leftAt: ISO string
+        │       ├── matched: boolean
+        │       └── override/         # Manual professor adjustment
+        │           ├── status: string
+        │           ├── reason: string
+        │           └── at: ISO string
+        ├── focusEvents/
+        │   └── {eventId}/
+        │       ├── studentName: string
+        │       ├── type: "lost" | "regained"
+        │       └── timestamp: ISO string
+        └── prompts/
+            └── {promptId}/
+                ├── phrase: string
+                ├── issuedAt: ISO string
+                ├── expiresAt: ISO string
+                ├── active: boolean
+                └── responses/
+                    └── {studentKey}/
+                        ├── text: string
+                        └── timestamp: ISO string
+```
 
 ---
 
-## Compiled Session Sheet: `Session_YYYY-MM-DD_SectionID`
+## Google Sheets "Kuwago Reports" Export Format
 
-When a session concludes via `endSession`, Kuwago generates a frozen, permanent spreadsheet tab formatted as `Session_YYYY-MM-DD_SectionID` (e.g. `Session_2026-09-11_BSIT301-A`).
+When a session concludes, the dashboard writes directly to the professor's **"Kuwago Reports"** spreadsheet in Google Drive via Sheets API v4. Each session generates a distinct tab formatted as `Session_YYYY-MM-DD_SectionID`:
 
-### Columns:
-1. **Student Name**: Canonical roster name.
-2. **Attendance Status**: `Present`, `Late`, `Absent`, or `Excused` (incorporates manual overrides).
-3. **Join Time**: Arrival timestamp.
-4. **Leave Time**: Departure timestamp.
-5. **Focus Lapses**: Number of sustained departures exceeding threshold.
-6. **Total Away Time**: Cumulative time away from Meet (formatted as `Xm Ys`).
-7. **Participation**: Fraction of answered verification prompts (e.g. `3 / 3`).
-8. **Notes / Overrides**: Audit notes detailing any professor adjustments and reasons.
+### 1. Summary Cards (Header Block)
+- **Session Metadata**: Section ID, Date, Start Time, End Time, Total Duration.
+- **Attendance Counts**: Present, Late, Absent, Excused, Total Enrolled.
+- **Engagement Metrics**: Average Focus Lapses, Average Time Away, Class Participation Rate.
+
+### 2. Student Roster Table
+| Column | Description |
+|---|---|
+| **Student Name** | Canonical roster name |
+| **Attendance Status** | `Present`, `Late`, `Absent`, or `Excused` |
+| **Focus Lapses** | Number of sustained departures (> 45s away) |
+| **Attentiveness** | Evaluated focus percentage during class |
+| **Prompts Answered** | Fraction of verification prompts completed (e.g. `2 / 2`) |
+| **Participation %** | Calculated participation score |
 
 ---
 
 ## Analytics & Behavioral Models
 
-### 1. Focus Lapses vs. Legacy Attentiveness %
-
-Kuwago v2.0.0 replaced arbitrary percentage calculations with **Focus Lapses**:
-- **Definition**: A focus lapse is registered only when a student remains unfocused from Google Meet for longer than the sustained unfocus alert threshold (default: 45 seconds).
-- **Transient Filtering**: Brief tab flicks (< 1.5s) are filtered at the extension layer; brief reference checks (< 45s) do not increment lapse counts.
-- **Reporting**: Displayed as a count alongside cumulative away duration (e.g. `2 lapses · 3m 40s away`). Clean students show `No focus lapses`.
+### 1. Focus Lapses vs. Percentage Scores
+- **Definition**: A focus lapse is recorded only when a student remains unfocused from Google Meet for longer than the sustained unfocus alert threshold (default: 45 seconds).
+- **Transient Filtering**: Brief tab switches (< 1.5s) are suppressed at the extension layer. Short glances (< 45s) do not trigger lapse increments.
+- **Presentation**: Displayed as a count alongside cumulative away duration (e.g. `2 lapses · 3m 40s away`). Clean students show `No focus lapses`.
 
 ### 2. Attendance Classification Engine
-
-Attendance status is resolved automatically:
-- **`Present`**: Joined within the configured grace period (default: 15 minutes from session start).
-- **`Late`**: Joined after the grace period has expired.
-- **`Absent`**: No join event recorded during the active session window.
-- **`Excused`**: Assigned via manual professor override with documented reason.
+Attendance status is calculated automatically based on arrival relative to session start:
+- **`Present`**: Joined within the configured grace period (default: 15 minutes).
+- **`Late`**: Joined after the grace period has elapsed.
+- **`Absent`**: No join event detected during the class session.
+- **`Excused`**: Assigned via manual professor override with an audit reason.

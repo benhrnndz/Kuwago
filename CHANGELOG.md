@@ -7,6 +7,49 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.0.0] — 2026-10-19
+
+### Added
+
+#### Firebase Realtime Database (RTDB) Integration
+- **Real-Time WebSocket Sync**: Replaced 5-second polling architecture with continuous Firebase Realtime Database listeners (`store.js`), reducing latency to under 500ms and eliminating polling strain.
+- **Direct REST Extension Logging**: Chrome extension communicates directly with RTDB via HTTPS REST API (`kuwago/classSessions/...`) without third-party proxy layers.
+- **Client-Side Analytics Engine (`engagement.js`)**: Real-time focus lapse calculation, sustained unfocus detection, and participation evaluation computed client-side from reactive RTDB snapshots.
+- **Database Seeding (`scripts/seed-rtdb.js`)**: Added Node.js seeding utility using `firebase-admin` to populate courses (`BSIT 3-5`) and full student rosters with support for `--wipe`.
+- **RTDB Security Rules (`firebase/database.rules.json`)**: Configured database read/write permissions scoped to course sessions, heartbeats, and aliases.
+
+#### Authentication & Access Control
+- **Google Sign-In Gateway (`login.html` & `js/login.js`)**: Dedicated authentication portal requiring professors to sign in with their Google account before accessing the dashboard.
+- **Client Auth Guard (`js/app.js`)**: Automatic redirection to `login.html` for unauthenticated visitors, preserving session continuity on login.
+- **OAuth Scope Authorization**: Captures and persists OAuth access tokens with `https://www.googleapis.com/auth/drive.file` and `https://www.googleapis.com/auth/spreadsheets` scopes for direct Drive/Sheets export.
+- **Profile & Logout Bar**: Displays signed-in professor name and avatar in the dashboard topbar with an instant sign-out control.
+
+#### Direct Google Sheets & Google Drive API Export (`js/sheets.js`)
+- **Direct OAuth API Exporter**: Bypasses Google Apps Script execution quotas and proxy timeouts by writing session reports directly to Google Sheets API v4 and Google Drive API v3.
+- **Automated "Kuwago Reports" Workbook**: Automatically locates or creates a central "Kuwago Reports" spreadsheet in the professor's own Google Drive.
+- **Formatted Session Tabs**: Adds structured `Session_YYYY-MM-DD_SectionID` tabs containing session metadata, metric summary cards, and full student attendance/focus rosters.
+- **Clickable Report Links**: End-of-class summary dialog provides instant direct links (`Open sheet ↗`) to view the newly compiled report in Google Sheets.
+
+#### Chrome Extension Upgrades & In-Meeting HUD
+- **In-Meeting Prompt Overlay (`overlay.js`)**: Floating visual banner injected directly into the Google Meet window when the professor issues a verification prompt, displaying the prompt phrase and countdown timer.
+- **Pre-Session Join Tracking**: Students joining the Meet call before the professor clicks "Start Class" have their join events staged and synced seamlessly when the session activates.
+- **Order-Insensitive Name Matching**: Normalizes student names to correctly match canonical rosters regardless of format (`LastName, FirstName` vs `FirstName LastName`).
+- **Brand Redesign & Setup Badge**: Extension popup updated with royal blue theme and a real-time RTDB connection status badge.
+
+#### Hosting & Deployment
+- **Vercel Deployment (`vercel.json`)**: Configured for continuous deployment on Vercel at `kuwago-dashboard.vercel.app` with clean URLs and security headers.
+- **Full-Viewport Dashboard**: Modernized layout from a constrained floating card into a full-height, responsive control center.
+
+### Changed
+- **Data Layer Architecture**: `js/api.js` rewritten to write directly to RTDB via `store.js` helpers while preserving full offline sandbox capabilities (`?mock=true`).
+- **Token Capture Fix**: Updated Firebase Auth token extraction to use compat SDK `result.credential.accessToken` instead of modular `credentialFromResult`.
+
+### Removed
+- **Apps Script Polling Loop**: Deprecated 5-second `dashboardData` polling interval and legacy Apps Script backend proxy endpoints.
+- **Dead Proxy Endpoints**: Removed legacy `api/export.js` Vercel function in favor of direct client-side Google API requests.
+
+---
+
 ## [2.0.0] — 2026-09-11
 
 ### Added
