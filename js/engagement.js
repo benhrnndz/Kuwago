@@ -414,6 +414,81 @@ export function buildStudentDetail(studentName, state) {
   };
 }
 
+/* ═══════════════════════════════════════════════════════════
+   SESSION SUMMARY BUILDER (end-of-class report)
+   ═══════════════════════════════════════════════════════════ */
+
+/**
+ * Build the end-of-class summary for every roster student in the
+ * active section. MUST be called while the session's attendance /
+ * focus / prompt data is still loaded in the store (i.e. before the
+ * session is marked inactive, which makes the store clear it).
+ *
+ * @param {import('./store.js').KuwagoState} state
+ * @param {string} endedAtIso — class end time (ISO)
+ * @returns {{ sessionId, sectionId, startedAt, endedAt, students: Array<Object> }}
+ */
+export function buildSessionSummary(state, endedAtIso) {
+  const { session, students: roster, attendance, focusEvents,
+          prompts, responses } = state;
+
+  const sectionId = session ? session.sectionId : null;
+  const section   = sectionId ? roster.filter(s => s.sectionId === sectionId) : roster;
+  const endMs     = _ts(endedAtIso);
+
+  const students = section.map(rs => {
+    const sKey  = sanitizeName(rs.name);
+    const att   = attendance[sKey] || null;
+    const evts  = focusEvents.filter(e => e.student === sKey);
+    const resps = responses.filter(r => r.student === sKey);
+
+    /* Close open attendance at class end for stats */
+    const attForStats = att && att.joinTime && !att.leaveTime
+      ? { ...att, leaveTime: endedAtIso }
+      : att;
+
+    let attendanceStatus = 'Absent';
+    if (att) {
+      if (att.override && att.override.status) attendanceStatus = att.override.status;
+      else if (att.status)                     attendanceStatus = att.status;
+    }
+
+    const lapses = computeFocusLapses(attForStats, evts);
+    const part   = computeParticipation(attForStats, prompts, resps);
+
+    let attentivenessPct = 0;
+    if (att && att.joinTime) {
+      const durMs = (att.leaveTime ? _ts(att.leaveTime) : endMs) - _ts(att.joinTime);
+      if (durMs > 0) {
+        attentivenessPct = Math.max(0, Math.min(100,
+          Math.round(100 - (lapses.totalSeconds * 1000 / durMs) * 100)));
+      }
+    }
+
+    return {
+      name:             rs.name,
+      timeIn:           att ? att.joinTime  || null : null,
+      timeOut:          att ? att.leaveTime || endedAtIso : null,
+      attendance:       attendanceStatus,
+      attendanceStatus,
+      focusLapses:      lapses.count,
+      awaySeconds:      lapses.totalSeconds,
+      attentivenessPct,
+      answered:         part.answered,
+      issued:           part.issued,
+      participationPct: part.rate
+    };
+  });
+
+  return {
+    sessionId: session ? session.sessionId : null,
+    sectionId,
+    startedAt: session ? session.startedAt : null,
+    endedAt:   endedAtIso,
+    students
+  };
+}
+
 /* ── Helpers ──────────────────────────────────────────────── */
 
 /** Parse a timestamp (ISO string or ms number) to ms number. */

@@ -119,6 +119,19 @@ export async function initSessionControl(onSessionChange) {
     btnEnd.disabled    = true;
     btnEnd.textContent = 'Ending…';
 
+    /* Snapshot the report data FIRST — once the session is marked
+       inactive the store clears attendance/focus/prompt data. */
+    const endedAtIso = new Date().toISOString();
+    let summary = null;
+    try {
+      const { getState }            = await import('./store.js');
+      const { buildSessionSummary } = await import('./engagement.js');
+      const { isMockMode }          = await import('./mock.js');
+      if (!isMockMode()) summary = buildSessionSummary(getState(), endedAtIso);
+    } catch (err) {
+      console.warn('[session] Could not build summary:', err.message);
+    }
+
     const result = await endSession(_sessionId);
 
     if (result.error) {
@@ -128,10 +141,7 @@ export async function initSessionControl(onSessionChange) {
       return;
     }
 
-    /* Export the session report to Google Sheets via the slim Apps Script exporter */
-    _exportSessionReport(_sessionId, _sectionId, _startedAt, result.endedAt).catch(err =>
-      console.warn('[session] Report export failed:', err.message)
-    );
+    if (summary) summary.endedAt = result.endedAt || endedAtIso;
 
     _sessionActive = false;
     _sessionId     = null;
@@ -141,7 +151,14 @@ export async function initSessionControl(onSessionChange) {
     stopTimer();
     updateSessionUI();
 
-    if (_onSessionChange) _onSessionChange(false, result.summary || null);
+    /* Open the summary modal immediately, then export to Google Sheets */
+    if (summary) {
+      const { renderSessionSummary } = await import('./render.js');
+      renderSessionSummary({ ...summary, sheetName: '' });
+      _runExport(summary);
+    }
+
+    if (_onSessionChange) _onSessionChange(false, null);
   });
 
   /* ── Restore state if session was already active ─────── */
@@ -163,44 +180,98 @@ export async function initSessionControl(onSessionChange) {
   }
 }
 
-/* ── Session Report Export ─────────────────────────────── */
+/* Apps Script exporter URL — the slim exporter web app */
+const EXPORTER_URL = 'https://script.google.com/macros/s/AKfycbxxr5ZJdb0rvdH7Z3GEWX_4agoJvYCOOh9nYSbP8rdiVV6LZmxJ3U77f_qlYejRN4QyIA/exec';
+
+/**
+ * Show export progress in the summary modal.
+ * @param {'saving'|'saved'|'unconfirmed'|'error'} state
+ * @param {{ sheetName?: string, url?: string, message?: string }} [info]
+ */
+function _setExportStatus(state, info = {}) {
+  const el = document.getElementById('ss-export-status');
+  if (!el) return;
+
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  el.className = 'ss-hint ss-export ss-export--' + state;
+  if (state === 'saving') {
+    el.innerHTML = '⏳ Saving report to Google Sheets…';
+  } else if (state === 'saved') {
+    const link = info.url
+      ? ` <a href="${esc(info.url)}" target="_blank" rel="noopener">Open sheet ↗</a>`
+      : '';
+    el.innerHTML = `✅ Saved to <strong>Kuwago Reports</strong> → tab <strong>${esc(info.sheetName || '')}</strong>.${link}`;
+  } else if (state === 'unconfirmed') {
+    el.innerHTML = '⚠️ Report was sent, but the exporter did not confirm. Check the <strong>Kuwago Reports</strong> sheet in your Google Drive.'
+      + ' <button type="button" class="btn btn--ghost" id="ss-retry-export">Retry</button>';
+  } else {
+    el.innerHTML = `❌ Could not save to Google Sheets: ${esc(info.message || 'unknown error')}`
+      + ' <button type="button" class="btn btn--ghost" id="ss-retry-export">Retry</button>';
+  }
+}
+
+/** Run the export for a summary and reflect the outcome in the modal. */
+async function _runExport(summary) {
+  _setExportStatus('saving');
+  try {
+    const out = await _exportSessionReport(summary);
+    if (out && out.ok) {
+      const nameEl = document.getElementById('ss-sheet-name');
+      const inlineEl = document.getElementById('ss-sheet-name-inline');
+      if (nameEl) nameEl.textContent = out.sheetName || '';
+      if (inlineEl) inlineEl.textContent = out.sheetName || '';
+      _setExportStatus('saved', out);
+    } else if (out && out.opaque) {
+      _setExportStatus('unconfirmed');
+    } else {
+      _setExportStatus('error', { message: (out && out.error) || 'Exporter returned an error' });
+    }
+  } catch (err) {
+    console.warn('[session] Report export failed:', err.message);
+    _setExportStatus('error', { message: err.message });
+  }
+
+  document.getElementById('ss-retry-export')?.addEventListener('click', () => _runExport(summary));
+}
 
 /**
  * POST the session summary JSON to the slim Apps Script exporter.
  * The exporter writes one tab in the "Kuwago Reports" spreadsheet.
  *
- * @param {string} sessionId
- * @param {string} sectionId
- * @param {string} startedAt
- * @param {string} endedAt
+ * @param {Object} summary — from buildSessionSummary()
+ * @returns {Promise<{ ok?: boolean, sheetName?: string, url?: string, error?: string, opaque?: boolean }>}
  */
-async function _exportSessionReport(sessionId, sectionId, startedAt, endedAt) {
-  /* Import here to avoid circular deps at module parse time */
-  const { getState } = await import('./store.js');
-  const { buildDashboardData } = await import('./engagement.js');
-
-  const state   = getState();
-  const data    = buildDashboardData(state);
-  const summary = {
-    sessionId,
-    sectionId,
-    startedAt,
-    endedAt,
-    students: data.students.map(s => ({
+async function _exportSessionReport(summary) {
+  const payload = {
+    sessionId: summary.sessionId,
+    sectionId: summary.sectionId,
+    startedAt: summary.startedAt,
+    endedAt:   summary.endedAt,
+    students:  summary.students.map(s => ({
       name:             s.name,
       attendanceStatus: s.attendanceStatus,
-      liveStatus:       s.liveStatus
+      focusLapses:      s.focusLapses,
+      attentivenessPct: s.attentivenessPct,
+      answered:         s.answered,
+      issued:           s.issued,
+      participationPct: s.participationPct
     }))
   };
 
-  /* Apps Script exporter URL — set after deploying the slim exporter */
-  const EXPORTER_URL = 'https://script.google.com/macros/s/AKfycbxxr5ZJdb0rvdH7Z3GEWX_4agoJvYCOOh9nYSbP8rdiVV6LZmxJ3U77f_qlYejRN4QyIA/exec';
-
-  await fetch(EXPORTER_URL, {
+  const res = await fetch(EXPORTER_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body:    JSON.stringify({ action: 'exportSessionSummary', summary })
+    body:    JSON.stringify({ action: 'exportSessionSummary', summary: payload })
   });
+
+  if (!res.ok) throw new Error(`Exporter HTTP ${res.status}`);
+
+  try {
+    return await res.json();
+  } catch {
+    return { opaque: true };
+  }
 }
 
 /* ── Session State Queries ─────────────────────────────── */

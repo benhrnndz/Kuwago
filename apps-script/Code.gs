@@ -207,7 +207,12 @@ function exportSessionSummary(summary) {
 
     Logger.log('exportSessionSummary: wrote ' + students.length + ' students to ' + uniqueName);
 
-    return { ok: true, sheetName: uniqueName, studentCount: students.length };
+    return {
+      ok:           true,
+      sheetName:    uniqueName,
+      studentCount: students.length,
+      url:          ss.getUrl() + '#gid=' + sheet.getSheetId()
+    };
 
   } catch (err) {
     Logger.log('exportSessionSummary ERROR: ' + err.message);
