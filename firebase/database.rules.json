@@ -38,8 +38,8 @@
       },
 
       "heartbeats": {
+        ".read": "auth != null",
         "$studentKey": {
-          ".read":  "auth != null",
           ".write": "auth != null"
         }
       },

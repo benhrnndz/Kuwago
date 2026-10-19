@@ -96,7 +96,23 @@ export async function signInWithGoogle() {
   try {
     await _auth.signInWithPopup(provider);
   } catch (err) {
-    console.error('[firebase] Google sign-in failed:', err.message);
+    console.error('[firebase] Google sign-in failed:', err.code, err.message);
+
+    const hints = {
+      'auth/configuration-not-found':
+        'Firebase Authentication is not set up. In the Firebase console go to Authentication → Get started, then enable the Google provider.',
+      'auth/operation-not-allowed':
+        'The Google sign-in provider is disabled. Enable it in Firebase console → Authentication → Sign-in method.',
+      'auth/unauthorized-domain':
+        `This domain (${location.hostname}) is not authorized. Add it in Firebase console → Authentication → Settings → Authorized domains.`,
+      'auth/popup-blocked':
+        'The sign-in popup was blocked by the browser. Allow popups for this site and try again.'
+    };
+
+    /* User closing the popup is not an error worth alerting */
+    if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
+
+    alert(`Sign-in failed (${err.code}).\n\n${hints[err.code] || err.message}`);
   }
 }
 
