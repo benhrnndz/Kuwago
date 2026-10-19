@@ -318,17 +318,6 @@ export function renderUnmatchedTable(students) {
 
   const fragment = document.createDocumentFragment();
   rows.forEach((student, index) => {
-    /* Build options for resolve dropdown */
-    let optionsHtml = `<option value="">-- Select Roster Match --</option>`;
-    if (student.suggestions && student.suggestions.length > 0) {
-      optionsHtml += `<optgroup label="Suggestions">`;
-      student.suggestions.forEach(sug => {
-        optionsHtml += `<option value="${escapeHtml(sug.name)}">${escapeHtml(sug.name)} (${Math.round(sug.score * 100)}%)</option>`;
-      });
-      optionsHtml += `</optgroup>`;
-    }
-    optionsHtml += `<option value="DISMISS">Dismiss (Not a student)</option>`;
-
     const tr = document.createElement('tr');
     tr.style.animationDelay = `${index * 15}ms`;
     tr.innerHTML = `
@@ -344,9 +333,7 @@ export function renderUnmatchedTable(students) {
         </div>
       </td>
       <td>
-        <select class="resolve-select ${student.suggestions && student.suggestions.length > 0 ? 'has-suggestions' : ''}" data-detected="${escapeHtml(student.name)}">
-          ${optionsHtml}
-        </select>
+        <span class="status-label status-label--unmatched">${escapeHtml(student.action || 'Unmatched')}</span>
       </td>
     `;
     fragment.appendChild(tr);
