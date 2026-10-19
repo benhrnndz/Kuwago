@@ -181,7 +181,7 @@ export async function initSessionControl(onSessionChange) {
 }
 
 /* Apps Script exporter URL — the slim exporter web app */
-const EXPORTER_URL = 'https://script.google.com/macros/s/AKfycbxxr5ZJdb0rvdH7Z3GEWX_4agoJvYCOOh9nYSbP8rdiVV6LZmxJ3U77f_qlYejRN4QyIA/exec';
+const EXPORTER_URL = 'https://script.google.com/macros/s/AKfycbwnAFO1gkvkha40dVdUgmlx1t8IYwJwpqgUEPrfWokX8dShUGf_5i0UqBx9Inw7DeV5nQ/exec';
 
 /**
  * Show export progress in the summary modal.
