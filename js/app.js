@@ -7,8 +7,8 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { fetchDashboardData, fetchStudentDetail } from './api.js';
-import { initFirebase, signInWithGoogle } from './firebase.js';
-import { initStore, getState } from './store.js';
+import { initFirebase, signInWithGoogle, onAuthChange } from './firebase.js';
+import { initStore, stopStore, getState } from './store.js';
 import { buildDashboardData } from './engagement.js';
 import { isMockMode } from './mock.js';
 import {
@@ -23,7 +23,7 @@ import {
 } from './render.js';
 import { initPromptModal } from './prompt.js';
 import { initRespondentsModal, updateRespondentData } from './respondents.js';
-import { initSessionControl, syncSessionFromPoll, isSessionActive } from './session.js';
+import { initSessionControl, syncSessionFromPoll, isSessionActive, renderCourseOptions } from './session.js';
 import { initBatch2Interactions } from './attendance.js';
 
 /* ── Configuration ─────────────────────────────────────── */
@@ -73,15 +73,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     _pollTimer = setInterval(poll, POLL_INTERVAL_MS);
   } else {
     /* ── LIVE MODE: subscribe to RTDB store ─────────────── */
-    initStore((state) => {
-      const data = buildDashboardData(state);
-      _latestData = data;
-      renderAll(data, false /* never "poll failed" in RTDB mode */);
-      updateRespondentData(data.activePrompt);
+    /* RTDB rules require auth, and Firebase permanently cancels a
+       listener that gets permission_denied. So only attach listeners
+       while signed in, and re-attach after every sign-in. */
+    onAuthChange((user) => {
+      if (!user) {
+        stopStore();
+        renderCourseOptions([]);
+        return;
+      }
 
-      /* Keep session.js UI in sync */
-      if (data.session) syncSessionFromPoll(data.session);
-      else syncSessionFromPoll(null);
+      initStore((state) => {
+        renderCourseOptions(state.courses);
+
+        const data = buildDashboardData(state);
+        _latestData = data;
+        renderAll(data, false /* never "poll failed" in RTDB mode */);
+        updateRespondentData(data.activePrompt);
+
+        /* Keep session.js UI in sync */
+        if (data.session) syncSessionFromPoll(data.session);
+        else syncSessionFromPoll(null);
+      });
     });
   }
 

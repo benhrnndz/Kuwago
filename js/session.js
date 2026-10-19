@@ -19,6 +19,45 @@ let _onSessionChange = null; /* callback for app.js */
 
 export function getCurrentSessionId() { return _sessionId; }
 
+let _lastCoursesKey = null;
+
+/**
+ * (Re)fill the course dropdown. Safe to call on every store update —
+ * it only touches the DOM when the course list actually changes,
+ * and preserves the current selection.
+ * @param {Array<{ sectionId, courseName, sectionName }>} courses
+ */
+export function renderCourseOptions(courses) {
+  const selector = document.getElementById('course-selector');
+  const btnStart = document.getElementById('btn-start-class');
+  if (!selector) return;
+
+  const key = JSON.stringify(courses.map(c => [c.sectionId, c.courseName, c.sectionName]));
+  if (key === _lastCoursesKey) return;
+  _lastCoursesKey = key;
+
+  const previous = selector.value;
+
+  if (courses.length === 0) {
+    selector.innerHTML = '<option value="" disabled selected>No courses found</option>';
+    if (btnStart) btnStart.disabled = true;
+    return;
+  }
+
+  selector.innerHTML = '<option value="" disabled selected>Select a course…</option>';
+  for (const c of courses) {
+    const opt = document.createElement('option');
+    opt.value = c.sectionId;
+    opt.textContent = `${c.courseName} — ${c.sectionName}`;
+    selector.appendChild(opt);
+  }
+
+  if (previous && courses.some(c => c.sectionId === previous)) {
+    selector.value = previous;
+  }
+  if (btnStart) btnStart.disabled = !selector.value || _sessionActive;
+}
+
 /* ── Init ──────────────────────────────────────────────── */
 
 /**
@@ -35,18 +74,10 @@ export async function initSessionControl(onSessionChange) {
   if (!selector || !btnStart || !btnEnd) return;
 
   /* ── Load courses ─────────────────────────────────────── */
+  /* In live mode the store may not be connected yet (pre sign-in);
+     app.js calls renderCourseOptions() again whenever courses arrive. */
   const result = await fetchCourses();
-  if (result.courses && result.courses.length > 0) {
-    selector.innerHTML = '<option value="" disabled selected>Select a course…</option>';
-    for (const c of result.courses) {
-      const opt = document.createElement('option');
-      opt.value = c.sectionId;
-      opt.textContent = `${c.courseName} — ${c.sectionName}`;
-      selector.appendChild(opt);
-    }
-  } else {
-    selector.innerHTML = '<option value="" disabled selected>No courses found</option>';
-  }
+  renderCourseOptions(result.courses || []);
 
   /* Enable/disable start button based on selector */
   selector.addEventListener('change', () => {

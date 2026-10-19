@@ -29,6 +29,7 @@ let _user = null;
 
 let _authResolved        = false;
 let _authReadyCallbacks  = [];
+let _authChangeCallbacks = [];
 
 /* ── Init ─────────────────────────────────────────────────── */
 
@@ -54,6 +55,9 @@ export function initFirebase() {
       const pending = _authReadyCallbacks.slice();
       _authReadyCallbacks = [];
       for (const cb of pending) cb(user);
+
+      /* Notify persistent subscribers on every sign-in / sign-out */
+      for (const cb of _authChangeCallbacks) cb(user);
 
       resolve(user);
     });
@@ -82,6 +86,16 @@ export function onAuthReady(cb) {
     return;
   }
   _authReadyCallbacks.push(cb);
+}
+
+/**
+ * Subscribe to every auth state change (sign-in AND sign-out).
+ * Fires immediately with the current user if auth is already resolved.
+ * @param {Function} cb - called with (user: firebase.User|null)
+ */
+export function onAuthChange(cb) {
+  _authChangeCallbacks.push(cb);
+  if (_authResolved) cb(_user);
 }
 
 /* ── Auth Actions ─────────────────────────────────────────── */

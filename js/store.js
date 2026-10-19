@@ -57,6 +57,9 @@ let _currentSessionId = null;
 export function initStore(onUpdate) {
   if (isMockMode()) return;
 
+  /* Re-init safe: drop any old (possibly permission-cancelled) listeners */
+  stopStore();
+
   _onUpdate = onUpdate;
   const db = getDb();
 
@@ -121,6 +124,22 @@ export function initStore(onUpdate) {
     _state.aliases = snap.val() || {};
     _notify();
   });
+}
+
+/**
+ * Detach every listener and reset state to empty.
+ * Called on sign-out, and before re-initialising on sign-in.
+ */
+export function stopStore() {
+  _unsubscribeFromSession();
+  for (const { ref, event, cb } of _globalListeners) ref.off(event, cb);
+  _globalListeners = [];
+
+  _state.session    = null;
+  _state.courses    = [];
+  _state.students   = [];
+  _state.heartbeats = {};
+  _state.aliases    = {};
 }
 
 /* ── Session-Scoped Listeners ─────────────────────────────── */
