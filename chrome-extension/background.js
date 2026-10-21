@@ -343,7 +343,7 @@ async function writeJoinForTab(tabId) {
 
   await rtdbPut(
     `kuwago/classSessions/${sessionId}/attendance/${sKey}`,
-    { joinTime: now, leaveTime: null, status, matched: true }
+    { joinTime: now, leaveTime: null, status, matched: true, detectedName: name }
   );
 
   tabData.sessionId = sessionId;

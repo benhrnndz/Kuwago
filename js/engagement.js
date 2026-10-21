@@ -261,6 +261,40 @@ export function buildDashboardData(state) {
     });
   }
 
+  /* ── Build unmatched session identities ───────────────────── */
+  if (sessionActive) {
+    const rosterKeys = new Set(sectionStudents.map(student => sanitizeName(student.name)));
+    const unmatchedKeys = new Set();
+
+    for (const [attendanceKey, att] of Object.entries(attendance)) {
+      const attendanceIdentityKey = sanitizeName(attendanceKey);
+      if (rosterKeys.has(attendanceIdentityKey)) continue;
+
+      const detectedName = att.detectedName || attendanceKey;
+      const identityKey = sanitizeName(detectedName);
+      if (unmatchedKeys.has(identityKey)) continue;
+      unmatchedKeys.add(identityKey);
+
+      const unmatchedFocusEvents = focusEvents.filter(e => e.student === attendanceKey);
+      const unmatchedHeartbeat = heartbeats[attendanceKey] || null;
+
+      studentList.push({
+        name: detectedName,
+        liveStatus: determineStatus(att, unmatchedFocusEvents),
+        attendanceStatus: null,
+        activeAlerts: computeActiveAlerts(
+          determineStatus(att, unmatchedFocusEvents),
+          unmatchedFocusEvents,
+          unmatchedHeartbeat,
+          activePromptObj,
+          responses.filter(r => r.student === attendanceKey)
+        ),
+        matched: false,
+        action: 'Unmatched'
+      });
+    }
+  }
+
   /* ── Build prompt card data ───────────────────────────────── */
   let activePromptData = null;
 
