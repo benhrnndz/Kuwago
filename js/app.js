@@ -197,11 +197,36 @@ function initNavigation() {
 
 function initSearch() {
   const input = document.getElementById('search-input');
+  const kbd = document.getElementById('search-kbd');
   if (!input) return;
+
+  // Platform detection for keyboard shortcut hint
+  if (kbd && typeof navigator !== 'undefined') {
+    const isMac = /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform || navigator.userAgent);
+    kbd.textContent = isMac ? '⌘K' : 'Ctrl+K';
+  }
 
   input.addEventListener('input', () => {
     setSearch(input.value);
     if (_latestData) renderRosterTable(_latestData.students);
+  });
+
+  // Global Emil Kowalski keyboard ergonomics: ⌘K / Ctrl+K or '/' to focus search
+  document.addEventListener('keydown', (e) => {
+    const isModifier = e.metaKey || e.ctrlKey;
+    const isCmdK = isModifier && (e.key === 'k' || e.key === 'K');
+    const isSlash = e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+
+    if (isCmdK || isSlash) {
+      e.preventDefault();
+      input.focus();
+      input.select();
+    } else if (e.key === 'Escape' && document.activeElement === input) {
+      input.value = '';
+      setSearch('');
+      input.blur();
+      if (_latestData) renderRosterTable(_latestData.students);
+    }
   });
 }
 
