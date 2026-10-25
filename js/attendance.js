@@ -1,5 +1,6 @@
 import { resolveMatch, overrideAttendance } from './api.js';
 import { getCurrentSessionId } from './session.js';
+import { toast } from './toast.js';
 
 let _activeOverrideStudent = null;
 
@@ -23,17 +24,19 @@ export function initBatch2Interactions(onDataMutated) {
         const canonical = resolvedTo === 'DISMISS' ? null : resolvedTo;
         const res = await resolveMatch(detectedName, canonical);
         if (res && res.success) {
+          toast.success('Identity matched', `Reconciled "${detectedName}"`);
           // Immediately trigger a UI update by calling the provided callback
           if (onDataMutated) onDataMutated();
         } else {
           console.error('[attendance] resolveMatch error', res);
-          alert('Failed to resolve match. See console.');
+          toast.error('Failed to resolve match', res?.error || 'Unknown error');
           select.value = '';
           select.disabled = false;
           select.style.backgroundColor = originalBg;
         }
       } catch (err) {
         console.error('[attendance] resolveMatch exception', err);
+        toast.error('Resolution error', err.message);
         select.value = '';
         select.disabled = false;
         select.style.backgroundColor = originalBg;
@@ -94,16 +97,19 @@ export function initBatch2Interactions(onDataMutated) {
       btnSave.disabled = true;
 
       try {
-        const res = await overrideAttendance(sessionId, _activeOverrideStudent, status, reason);
+        const studentName = _activeOverrideStudent;
+        const res = await overrideAttendance(sessionId, studentName, status, reason);
         if (res && res.success) {
           closeModal();
+          toast.success('Attendance updated', `${studentName} marked as ${status}`);
           if (onDataMutated) onDataMutated();
         } else {
           console.error('[attendance] override error', res);
-          alert('Failed to override attendance.');
+          toast.error('Failed to override attendance', res?.error || 'Unknown error');
         }
       } catch (err) {
         console.error('[attendance] override exception', err);
+        toast.error('Override error', err.message);
       } finally {
         btnSave.textContent = originalText;
         btnSave.disabled = false;
