@@ -9,6 +9,7 @@
 
 import { fetchCourses, startSession, endSession, fetchSessionState } from './api.js';
 import { exportToSheets } from './sheets.js';
+import { toast } from './toast.js';
 
 /* ── State ─────────────────────────────────────────────── */
 let _sessionActive  = false;
@@ -95,7 +96,7 @@ export async function initSessionControl(onSessionChange) {
     const result = await startSession(selector.value);
 
     if (result.error) {
-      alert('Failed to start session: ' + result.error);
+      toast.error('Failed to start session', result.error);
       btnStart.disabled    = false;
       btnStart.textContent = 'Start Class';
       return;
@@ -108,6 +109,7 @@ export async function initSessionControl(onSessionChange) {
 
     updateSessionUI();
     startTimer();
+    toast.info('Session started', 'Live telemetry active for this class');
 
     if (_onSessionChange) _onSessionChange(true);
   });
@@ -136,7 +138,7 @@ export async function initSessionControl(onSessionChange) {
     const result = await endSession(_sessionId);
 
     if (result.error) {
-      alert('Failed to end session: ' + result.error);
+      toast.error('Failed to end session', result.error);
       btnEnd.disabled    = false;
       btnEnd.textContent = 'End Class';
       return;
@@ -151,6 +153,7 @@ export async function initSessionControl(onSessionChange) {
 
     stopTimer();
     updateSessionUI();
+    toast.success('Session ended', 'Summary report generated');
 
     /* Open the summary modal immediately, then export to Google Sheets */
     if (summary) {
@@ -202,12 +205,15 @@ function _setExportStatus(state, info = {}) {
       ? ` <a href="${esc(info.url)}" target="_blank" rel="noopener">Open sheet ↗</a>`
       : '';
     el.innerHTML = `✅ Saved to <strong>Kuwago Reports</strong> → tab <strong>${esc(info.sheetName || '')}</strong>.${link}`;
+    toast.success('Saved to Google Sheets', info.sheetName ? `Tab: ${info.sheetName}` : '');
   } else if (state === 'unconfirmed') {
     el.innerHTML = '⚠️ Report was sent, but the exporter did not confirm. Check the <strong>Kuwago Reports</strong> sheet in your Google Drive.'
       + ' <button type="button" class="btn btn--ghost" id="ss-retry-export">Retry</button>';
+    toast.warning('Export unconfirmed', 'Check your Google Drive');
   } else {
     el.innerHTML = `❌ Could not save to Google Sheets: ${esc(info.message || 'unknown error')}`
       + ' <button type="button" class="btn btn--ghost" id="ss-retry-export">Retry</button>';
+    toast.error('Google Sheets export failed', info.message || '');
   }
 }
 
