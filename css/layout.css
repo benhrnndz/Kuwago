@@ -50,19 +50,39 @@
 
 /* Signature Curved Royal Blue Sidebar Panel */
 .sidebar__panel {
-  background: #1d61ea;
+  background: linear-gradient(180deg, #1d61ea 0%, #1753ce 100%);
   border-top-right-radius: 36px;
   padding: 24px 20px 32px 20px;
   display: flex;
   flex-direction: column;
   flex: 1;
   overflow-y: auto;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.22);
 }
 
 /* Sidebar Primary CTA */
 .sidebar__cta {
   width: 100%;
   margin-bottom: var(--space-6);
+  position: relative;
+  box-shadow: var(--shadow-btn-white);
+  transition: all var(--duration-fast) var(--ease-out-expo);
+}
+
+.sidebar__cta:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12), inset 0 1px 0 0 #ffffff;
+}
+
+.sidebar__cta:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.sidebar__cta:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
 }
 
 /* Sidebar Navigation */
@@ -81,26 +101,33 @@
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: rgba(255, 255, 255, 0.8);
-  transition: all var(--duration-normal) var(--ease-out);
+  color: rgba(255, 255, 255, 0.82);
+  transition: all var(--duration-fast) var(--ease-out-expo);
   cursor: pointer;
   position: relative;
+  user-select: none;
 }
 
 .nav-item:hover {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.12);
+  transform: translateX(1px);
+}
+
+.nav-item:active {
+  transform: scale(0.98);
 }
 
 .nav-item--active {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.06);
   font-weight: var(--weight-semibold);
 }
 
 .nav-item--active:hover {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .nav-item__icon {
@@ -155,6 +182,8 @@
   flex: 0 1 340px;
   min-width: 180px;
   max-width: 400px;
+  display: flex;
+  align-items: center;
 }
 
 .search-wrapper__icon {
@@ -166,51 +195,91 @@
   height: 16px;
   color: #94a3b8;
   pointer-events: none;
+  transition: color var(--duration-fast) var(--ease-out);
 }
 
 .search-pill {
   width: 100%;
-  height: 42px;
-  padding: 0 var(--space-4) 0 42px;
+  height: 40px;
+  padding: 0 52px 0 40px;
   background: #f0f4fd;
-  border: 1px solid transparent;
+  border: 1px solid rgba(226, 234, 248, 0.8);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   color: var(--zinc-900);
-  transition: all var(--duration-normal) var(--ease-out);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.02);
+  transition: all var(--duration-fast) var(--ease-out-expo);
 }
 
 .search-pill::placeholder {
   color: #94a3b8;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .search-pill:hover {
   background: #e8effb;
+  border-color: #cbdcf8;
 }
 
 .search-pill:focus {
-  border-color: #93c5fd;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-  background: white;
+  background: #ffffff;
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 3px rgba(29, 97, 234, 0.15), 0 2px 8px rgba(29, 97, 234, 0.06);
+}
+
+.search-pill:focus + .search-wrapper__icon {
+  color: var(--accent-600);
+}
+
+.search-kbd {
+  position: absolute;
+  right: 12px;
+  pointer-events: none;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid var(--zinc-200);
+  color: var(--zinc-400);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  line-height: 1.2;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.search-pill:focus ~ .search-kbd {
+  opacity: 0.5;
 }
 
 .topbar__actions {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  gap: var(--space-2);
 }
 
 .professor-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  padding: 4px 12px 4px 4px;
+  border-radius: var(--radius-full);
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  transition: all var(--duration-fast) var(--ease-out-expo);
+}
+
+.professor-info:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
 }
 
 .avatar {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-full);
-  background: #1d61ea;
+  background: linear-gradient(135deg, #1d61ea 0%, #1753ce 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -219,6 +288,7 @@
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-wide);
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(29, 97, 234, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .professor-name {
@@ -279,6 +349,68 @@
   font-weight: var(--weight-bold);
   color: #0f172a;
   letter-spacing: var(--tracking-tight);
+}
+
+/* ── Live Telemetry Status Badge ───────────────────────── */
+.live-telemetry-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #f1f5f9;
+  color: var(--zinc-500);
+  border: 1px solid #e2e8f0;
+  transition: all var(--duration-fast) var(--ease-out-expo);
+  position: relative;
+  user-select: none;
+}
+
+.live-telemetry-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--zinc-400);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.live-telemetry-ping {
+  display: none;
+}
+
+.live-telemetry-badge--active {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+  box-shadow: 0 1px 2px rgba(22, 163, 74, 0.08);
+}
+
+.live-telemetry-badge--active .live-telemetry-dot {
+  background: #16a34a;
+}
+
+.live-telemetry-badge--active .live-telemetry-ping {
+  display: block;
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(22, 163, 74, 0.45);
+  animation: telemetry-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes telemetry-ping {
+  75%, 100% {
+    transform: translateY(-50%) scale(2.4);
+    opacity: 0;
+  }
 }
 
 .section-label {
