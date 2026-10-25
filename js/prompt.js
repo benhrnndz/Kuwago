@@ -4,6 +4,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 import { sendPrompt } from './api.js';
+import { toast } from './toast.js';
 
 /* ── State ─────────────────────────────────────────────── */
 let _isOpen = false;
@@ -173,12 +174,15 @@ async function handleSubmit(onPromptSent) {
 
     if (result.success) {
       closeModal();
+      toast.success('Prompt broadcasted', `"${phrase}" is now live for ${durationSeconds}s`);
       if (onPromptSent) onPromptSent();
     } else {
       showError($phrase(), `Failed to send: ${result.error || 'Unknown error'}`);
+      toast.error('Failed to send prompt', result.error || 'Unknown error');
     }
   } catch (err) {
     showError($phrase(), `Error: ${err.message}`);
+    toast.error('Error sending prompt', err.message);
   } finally {
     if (sendBtn) {
       sendBtn.disabled = false;

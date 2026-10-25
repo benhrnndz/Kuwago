@@ -104,14 +104,25 @@ export function renderSummaryCards(data) {
   /* Card 1: Session Status */
   const sessionValue = $('#card-session-value');
   const liveDot = $('#live-indicator .live-dot');
+  const telemetryPill = $('#live-telemetry-pill');
+  const telemetryLabel = $('#live-telemetry-label');
+
   if (sessionActive) {
     sessionValue.textContent = 'Active';
     sessionValue.style.color = '';
     if (liveDot) liveDot.classList.remove('live-dot--idle');
+    if (telemetryPill) {
+      telemetryPill.classList.add('live-telemetry-badge--active');
+      if (telemetryLabel) telemetryLabel.textContent = 'Live';
+    }
   } else {
     sessionValue.textContent = 'Idle';
     sessionValue.style.color = 'var(--zinc-400)';
     if (liveDot) liveDot.classList.add('live-dot--idle');
+    if (telemetryPill) {
+      telemetryPill.classList.remove('live-telemetry-badge--active');
+      if (telemetryLabel) telemetryLabel.textContent = 'Idle';
+    }
   }
 
   /* Card 2: Active Prompt */
@@ -195,6 +206,22 @@ export function setSort(key) {
   } else {
     _currentSort = { key, dir: 'asc' };
   }
+
+  /* Update sort indicator classes on sortable headers */
+  $$('.sortable').forEach(th => {
+    const thKey = th.getAttribute('data-sort');
+    if (thKey === _currentSort.key) {
+      th.classList.add('sorted');
+      if (_currentSort.dir === 'desc') {
+        th.classList.add('sorted--desc');
+      } else {
+        th.classList.remove('sorted--desc');
+      }
+    } else {
+      th.classList.remove('sorted');
+      th.classList.remove('sorted--desc');
+    }
+  });
 }
 
 export function renderRosterTable(students) {

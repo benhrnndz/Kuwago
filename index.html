@@ -113,6 +113,7 @@
               autocomplete="off"
               spellcheck="false"
             />
+            <kbd class="search-kbd" id="search-kbd">⌘K</kbd>
           </div>
 
           <div class="topbar__actions">
@@ -147,13 +148,18 @@
           <div class="content__header">
             <div class="content__title">
               <h1>Live session</h1>
+              <div class="live-telemetry-badge" id="live-telemetry-pill">
+                <span class="live-telemetry-ping"></span>
+                <span class="live-telemetry-dot"></span>
+                <span class="live-telemetry-label" id="live-telemetry-label">Idle</span>
+              </div>
             </div>
             <div class="content__meta">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 16 14" />
               </svg>
-              <span id="last-updated">Updated 0s ago</span>
+              <span id="last-updated" class="tabular-nums">Updated 0s ago</span>
             </div>
           </div>
 
@@ -230,8 +236,18 @@
             <table class="data-table" id="roster-table">
               <thead>
                 <tr>
-                  <th class="sortable" data-sort="name">Student</th>
-                  <th class="sortable" data-sort="liveStatus">Status</th>
+                  <th class="sortable" data-sort="name">
+                    Student
+                    <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </th>
+                  <th class="sortable" data-sort="liveStatus">
+                    Status
+                    <svg class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </th>
                   <th>Attendance</th>
                   <th>Alerts</th>
                 </tr>

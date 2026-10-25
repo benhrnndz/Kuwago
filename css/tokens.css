@@ -113,24 +113,38 @@
   --radius-3xl:  36px;
   --radius-full: 999px;
 
-  /* ── Shadows ─────────────────────────────────────────── */
-  --shadow-xs:  0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-sm:  0 2px 6px rgba(15, 23, 42, 0.05);
-  --shadow-md:  0 4px 16px rgba(15, 23, 42, 0.06);
-  --shadow-lg:  0 10px 30px rgba(15, 23, 42, 0.08);
-  --shadow-xl:  0 24px 60px -10px rgba(16, 45, 115, 0.28),
-                0 10px 25px -5px rgba(0, 0, 0, 0.06);
+  /* ── Shadows (Emil Kowalski Multi-Layer Depth & Inset Lighting) ── */
+  --shadow-xs:    0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm:    0 2px 6px rgba(15, 23, 42, 0.05);
+  --shadow-md:    0 4px 16px rgba(15, 23, 42, 0.06);
+  --shadow-lg:    0 10px 30px rgba(15, 23, 42, 0.08);
+  --shadow-xl:    0 24px 60px -10px rgba(16, 45, 115, 0.28),
+                  0 10px 25px -5px rgba(0, 0, 0, 0.06);
   --shadow-inner: inset 0 1px 2px rgba(15, 23, 42, 0.06);
 
-  /* ── Transitions ─────────────────────────────────────── */
-  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in-out: cubic-bezier(0.32, 0.72, 0, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Craft Depth Shadows */
+  --shadow-top-light:       inset 0 1px 0 0 rgba(255, 255, 255, 0.85);
+  --shadow-top-dark:        inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+  --shadow-card:            0 1px 3px rgba(15, 23, 42, 0.03), 0 4px 14px -2px rgba(15, 23, 42, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  --shadow-card-hover:      0 4px 12px -2px rgba(15, 23, 42, 0.05), 0 16px 32px -4px rgba(29, 97, 234, 0.12), inset 0 1px 0 0 #ffffff;
+  --shadow-modal:           0 24px 64px -12px rgba(15, 23, 42, 0.25), 0 12px 24px -6px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.06);
+  --shadow-popover:         0 10px 30px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.06);
+  --shadow-btn-primary:     0 1px 2px rgba(15, 23, 42, 0.1), 0 4px 12px rgba(29, 97, 234, 0.28), inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
+  --shadow-btn-white:       0 1px 3px rgba(0, 0, 0, 0.06), 0 6px 16px -2px rgba(15, 23, 42, 0.08), inset 0 1px 0 0 #ffffff;
+  --shadow-focus:           0 0 0 2px #ffffff, 0 0 0 4px #1d61ea;
 
-  --duration-fast:    120ms;
-  --duration-normal:  200ms;
-  --duration-medium:  300ms;
-  --duration-slow:    500ms;
+  /* ── Transitions & Motion (Emil Kowalski Physics) ─────── */
+  --ease-out:       cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out:    cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-quick:     cubic-bezier(0.2, 0, 0, 1);
+
+  --duration-instant: 90ms;
+  --duration-fast:    140ms;
+  --duration-normal:  220ms;
+  --duration-medium:  320ms;
+  --duration-slow:    480ms;
 
   /* ── Layout Constants ────────────────────────────────── */
   --sidebar-width: 250px;
@@ -207,6 +221,29 @@ th, td {
 
 .mono {
   font-family: var(--font-mono);
+}
+
+.tabular-nums,
+.tnum {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-feature-settings: "tnum";
+  font-feature-settings: "tnum";
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--zinc-500);
+  background: white;
+  border: 1px solid var(--zinc-200);
+  border-radius: var(--radius-xs);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
 }
 
 .sr-only {
