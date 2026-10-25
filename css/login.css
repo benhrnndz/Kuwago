@@ -49,20 +49,22 @@
   background: #ffffff;
   border-radius: var(--radius-2xl);
   box-shadow:
-    0 24px 60px -10px rgba(16, 45, 115, 0.28),
-    0 10px 25px -5px rgba(0, 0, 0, 0.06);
+    0 24px 64px -12px rgba(16, 45, 115, 0.28),
+    0 8px 24px -4px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.8);
   padding: 48px 40px 40px;
   position: relative;
   z-index: 1;
 
-  /* Entrance animation */
-  animation: cardSlideUp 0.6s var(--ease-out) both;
+  /* Entrance animation with Emil Kowalski spring */
+  animation: cardSlideUp 0.48s var(--ease-out-expo) both;
 }
 
 @keyframes cardSlideUp {
   from {
     opacity: 0;
-    transform: translateY(24px) scale(0.98);
+    transform: translateY(20px) scale(0.97);
   }
   to {
     opacity: 1;
@@ -74,6 +76,7 @@
 .login-brand {
   text-align: center;
   margin-bottom: 32px;
+  cursor: default;
 }
 
 .login-brand__logo {
@@ -101,6 +104,11 @@
 .login-brand__owl {
   width: 30px;
   height: 30px;
+  transition: transform var(--duration-fast) var(--ease-spring);
+}
+
+.login-brand:hover .login-brand__owl {
+  transform: scale(1.1) rotate(6deg);
 }
 
 .login-brand__subtitle {
@@ -147,9 +155,11 @@
   font-weight: var(--weight-semibold);
   color: var(--zinc-700);
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), inset 0 1px 0 0 #ffffff;
+  transition: all var(--duration-fast) var(--ease-out-expo);
   position: relative;
   overflow: hidden;
+  user-select: none;
 }
 
 .login-google-btn::before {
@@ -164,7 +174,7 @@
 
 .login-google-btn:hover {
   border-color: var(--zinc-300);
-  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 6px 20px rgba(16, 45, 115, 0.1), inset 0 1px 0 0 #ffffff;
   transform: translateY(-1px);
 }
 
@@ -173,8 +183,13 @@
 }
 
 .login-google-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 2px 6px rgba(16, 45, 115, 0.06);
+}
+
+.login-google-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .login-google-btn__icon {
